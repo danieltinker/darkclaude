@@ -7,7 +7,7 @@ import { StatusBadge, PriorityBadge, IocLevelBadge } from '@/components/StatusBa
 export default async function MissionWorkspace({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const c = getCaseByReviewId(id);
-  if (!c || !c.consumer_status) notFound();
+  if (!c || !c.consumer_status || !c.mission_package) notFound();
 
   const m = c.mission_package;
   const e = c.evidence_package;

@@ -1,28 +1,176 @@
-import { BridgeEvent, DynamicEvidencePackage, QueueCase, ReviewMissionPackage, SubmissionReport } from './types';
-import { RISKWARE_RUBRIC } from './rubrics';
+import {
+  BridgeEvent,
+  DeepInspectionReport,
+  DynamicEvidencePackage,
+  GateDecision,
+  InstallVerification,
+  QueueCase,
+  QueueLock,
+  ReviewMissionPackage,
+  StaticClosureReport,
+  StaticFunnelScorecard,
+  StaticSliceSummary,
+  SubmissionReport,
+} from './types';
+import { RISKWARE_GATE_POLICY, RISKWARE_RUBRIC } from './rubrics';
 import { reconcileScores, sumIocPoints, verdictFromScore } from './scoring';
 
 // =====================================================================
-// GOLDEN CASE 001 — Riskware: C2 URL → WebView.loadUrl
+// Helpers
 // =====================================================================
+
+function caseKey(c: Pick<QueueCase, 'case_identity'>): string {
+  const id = c.case_identity;
+  return `${id.app_review_id}/${id.package_name}/v${id.version_code}/${id.category_id}`;
+}
+
+function makeLock(app_review_id: string, queue_item_id: string, worker = 'static_funnel_worker_01'): QueueLock {
+  return {
+    lock_id: `lock_${app_review_id}`,
+    queue_item_id,
+    app_review_id,
+    locked_by: worker,
+    locked_at: '2026-05-27T08:00:00Z',
+    lock_expires_at: '2026-05-27T08:30:00Z',
+    status: 'QUEUE_LOCKED',
+  };
+}
+
+function makeInstallVerification(success = true): InstallVerification {
+  if (!success) {
+    return {
+      status: 'failed',
+      install_method: 'adb_install',
+      package_detected: false,
+      version_code_matches: false,
+      launchable_activity_found: false,
+      first_launch_success: false,
+      error_code: 'INSTALL_FAILED_VERSION_MISMATCH',
+      recoverable: true,
+      recommended_action: 'retry_with_clean_device_state',
+      notes: 'Install failed — version code on device does not match expected.',
+      artifact_refs: [],
+    };
+  }
+  return {
+    status: 'success',
+    install_method: 'adb_install',
+    package_detected: true,
+    version_code_matches: true,
+    launchable_activity_found: true,
+    first_launch_success: true,
+    notes: 'APK installed and launched successfully in controlled static lab.',
+    artifact_refs: ['artifacts/static/install/install_log.txt'],
+  };
+}
+
+// =====================================================================
+// GOLDEN CASE 001 — Riskware: C2 URL → WebView.loadUrl
+// FUNNEL: install ok → static slice → scorecard 10 → gate → dynamic
+// =====================================================================
+
+const GRC_001_IDENTITY = {
+  app_review_id: 'review_2026_000143',
+  queue_item_id: 'qitem_001',
+  package_name: 'com.adsync.dailyoffers',
+  app_name: 'Daily Offers Hub',
+  version_name: '4.2.1',
+  version_code: 421,
+  category_id: 'riskware',
+  category_name: 'Riskware',
+};
+
+const GRC_001_LOCK = makeLock(GRC_001_IDENTITY.app_review_id, GRC_001_IDENTITY.queue_item_id);
+const GRC_001_INSTALL = makeInstallVerification(true);
+
+const GRC_001_SLICE: StaticSliceSummary = {
+  status: 'completed',
+  decompile_status: 'success',
+  manifest_parsed: true,
+  native_files_detected: false,
+  network_strings_detected: true,
+  webview_usage_detected: true,
+  candidate_flows: [
+    {
+      flow_id: 'flow_c2_to_webview_001',
+      summary: 'Remote endpoint response appears to influence WebView.loadUrl destination.',
+      source: 'C2Client.fetchOffer',
+      transform: 'OfferParser.extractUrl',
+      sink: 'WebView.loadUrl',
+      confidence: 0.84,
+    },
+  ],
+};
+
+const GRC_001_SCORECARD: StaticFunnelScorecard = {
+  schema_version: '1.0.0',
+  event_type: 'StaticFunnelScorecard',
+  message_id: 'msg_grc001_scorecard_01',
+  created_at: '2026-05-27T08:05:00Z',
+  source_agent: 'StaticFunnelWorker',
+  case_identity: GRC_001_IDENTITY,
+  install_verification: GRC_001_INSTALL,
+  static_slice: GRC_001_SLICE,
+  rubric_potential: {
+    candidate_score: 10,
+    threshold_for_dynamic_analysis: 8,
+    requires_dynamic_analysis: true,
+    reason:
+      'Riskware rubric signal: remote endpoint + WebView sink + response-controlled URL flow. Strongly enough to justify deep dynamic analysis.',
+  },
+  candidate_iocs: [
+    {
+      ioc_id: 'rw_remote_controlled_webview',
+      level: 'medium',
+      confidence: 0.78,
+      reason: 'Static flow suggests remote response can influence WebView.loadUrl.',
+      evidence_refs: ['artifacts/static/review_2026_000143/slices/webview_flow.json'],
+    },
+    {
+      ioc_id: 'rw_c2_endpoint',
+      level: 'medium',
+      confidence: 0.81,
+      reason: 'Suspicious endpoint api.adsync-cdn.net/o/v3 controls offer payload selection.',
+      evidence_refs: ['artifacts/static/review_2026_000143/slices/network_endpoints.json'],
+    },
+    {
+      ioc_id: 'rw_hidden_webview',
+      level: 'weak',
+      confidence: 0.58,
+      reason: 'WebView visibility forced to GONE and attached after 4s delay.',
+      evidence_refs: ['artifacts/static/review_2026_000143/slices/ui_webview_refs.json'],
+    },
+  ],
+  missing_rubric_signals: [
+    {
+      ioc_id: 'rw_remote_config_flag',
+      ioc_name: 'Remote config flag enables hidden behavior',
+      reason: 'No remote-config feature-flag pattern detected in this app.',
+    },
+  ],
+  checksum: 'sha256:5c0recardgrc001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+};
+
+const GRC_001_GATE: GateDecision = {
+  case_identity: GRC_001_IDENTITY,
+  policy_applied: RISKWARE_GATE_POLICY,
+  candidate_score: 10,
+  triggered_force_rules: ['remote_controlled_webview_candidate'],
+  status: 'DYNAMIC_ANALYSIS_REQUIRED',
+  next_step: 'BUILD_DYNAMIC_MISSION_PACKAGE',
+  explanation:
+    'Candidate score (10) exceeds dynamic_analysis_threshold (8) AND remote_controlled_webview_candidate force rule is true. Route to dynamic evidence collection.',
+  decided_at: '2026-05-27T08:06:00Z',
+};
 
 const GRC_001_MISSION: ReviewMissionPackage = {
   schema_version: '1.0.0',
   event_type: 'ReviewMissionPackage',
   message_id: 'msg_grc001_mission_01',
-  created_at: '2026-05-26T20:00:00Z',
+  created_at: '2026-05-27T08:10:00Z',
   source_agent: 'ProducerStaticTriageAgent',
   target_agent: 'ConsumerDynamicEvidenceAgent',
-  case_identity: {
-    app_review_id: 'review_2026_000143',
-    queue_item_id: 'qitem_001',
-    package_name: 'com.adsync.dailyoffers',
-    app_name: 'Daily Offers Hub',
-    version_name: '4.2.1',
-    version_code: 421,
-    category_id: 'riskware',
-    category_name: 'Riskware',
-  },
+  case_identity: GRC_001_IDENTITY,
   rubric_reference: {
     rubric_id: RISKWARE_RUBRIC.rubric_id,
     rubric_version: RISKWARE_RUBRIC.rubric_version,
@@ -39,29 +187,7 @@ const GRC_001_MISSION: ReviewMissionPackage = {
   },
   static_triage: {
     candidate_score: 10,
-    top_ioc_candidates: [
-      {
-        ioc_id: 'rw_remote_controlled_webview',
-        level: 'medium',
-        confidence: 0.84,
-        reason:
-          'C2Client.fetchOffer() return value flows directly into HiddenWebViewController.load(url).',
-      },
-      {
-        ioc_id: 'rw_c2_endpoint',
-        level: 'medium',
-        confidence: 0.81,
-        reason:
-          'Decrypted endpoint https://api.adsync-cdn.net/o/v3 controls offer payload selection.',
-      },
-      {
-        ioc_id: 'rw_hidden_webview',
-        level: 'weak',
-        confidence: 0.62,
-        reason:
-          'WebView created with visibility GONE and attached to overlay container after 4s delay.',
-      },
-    ],
+    top_ioc_candidates: GRC_001_SCORECARD.candidate_iocs,
     execution_hypothesis: {
       summary:
         'On launch the app calls a C2 endpoint that returns a destination URL; the app loads that URL into a hidden WebView.',
@@ -80,11 +206,7 @@ const GRC_001_MISSION: ReviewMissionPackage = {
       ],
     },
     suspicious_urls: [
-      {
-        url: 'https://api.adsync-cdn.net/o/v3',
-        severity: 'high',
-        reason: 'Decrypted at runtime, controls WebView destination',
-      },
+      { url: 'https://api.adsync-cdn.net/o/v3', severity: 'high', reason: 'Decrypted at runtime, controls WebView destination' },
     ],
     suspicious_native_files: [],
     suggested_hooks: [
@@ -132,18 +254,7 @@ const GRC_001_MISSION: ReviewMissionPackage = {
     early_stop_on_strong_evidence: true,
   },
   artifacts: [
-    {
-      artifact_id: 'art_grc001_apk',
-      artifact_type: 'apk',
-      path: 'artifacts/apks/review_2026_000143/app.apk',
-      sha256: 'sha256:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2',
-    },
-    {
-      artifact_id: 'art_grc001_static_report',
-      artifact_type: 'static_report',
-      path: 'artifacts/static/review_2026_000143/static_report.json',
-      sha256: 'sha256:b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3',
-    },
+    { artifact_id: 'art_grc001_apk', artifact_type: 'apk', path: 'artifacts/apks/review_2026_000143/app.apk', sha256: 'sha256:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2' },
   ],
   checksum: 'sha256:c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4',
 };
@@ -152,10 +263,10 @@ const GRC_001_EVIDENCE: DynamicEvidencePackage = {
   schema_version: '1.0.0',
   event_type: 'DynamicEvidencePackage',
   message_id: 'msg_grc001_evidence_01',
-  created_at: '2026-05-26T20:45:00Z',
+  created_at: '2026-05-27T08:55:00Z',
   source_agent: 'ConsumerDynamicEvidenceAgent',
   target_agent: 'ProducerStaticTriageAgent',
-  case_identity: GRC_001_MISSION.case_identity,
+  case_identity: GRC_001_IDENTITY,
   execution_summary: {
     status: 'completed',
     runtime_verdict_candidate: 'riskware',
@@ -210,8 +321,7 @@ const GRC_001_EVIDENCE: DynamicEvidencePackage = {
       country: 'BR',
       tools_used: ['logcat', 'http_toolkit', 'frida'],
       hooks_enabled: ['android.webkit.WebView.loadUrl', 'com.adsync.net.C2Client.fetchOffer'],
-      result:
-        'C2 response contained offer_url=https://promo.luckydeals.br/offer/9921. WebView.loadUrl received the same URL.',
+      result: 'C2 response contained offer_url=https://promo.luckydeals.br/offer/9921. WebView.loadUrl received the same URL.',
       artifacts: [
         'artifacts/dynamic/review_2026_000143/network/br_session.har',
         'artifacts/dynamic/review_2026_000143/hooks/webview_loadurl_br.json',
@@ -238,13 +348,7 @@ const GRC_001_EVIDENCE: DynamicEvidencePackage = {
       description: 'HAR shows POST to api.adsync-cdn.net/o/v3 returning JSON with offer_url field used by WebView.',
       severity: 'high',
       confidence: 0.94,
-      artifact: {
-        artifact_id: 'art_c2_har',
-        artifact_type: 'network_capture',
-        path: 'artifacts/dynamic/review_2026_000143/network/br_session.har',
-        sha256: 'sha256:d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5',
-        mime_type: 'application/json',
-      },
+      artifact: { artifact_id: 'art_c2_har', artifact_type: 'network_capture', path: 'artifacts/dynamic/review_2026_000143/network/br_session.har', sha256: 'sha256:d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5', mime_type: 'application/json' },
     },
     {
       evidence_id: 'ev_webview_hook',
@@ -254,13 +358,7 @@ const GRC_001_EVIDENCE: DynamicEvidencePackage = {
       description: 'Frida hook on WebView.loadUrl captured https://promo.luckydeals.br/offer/9921.',
       severity: 'high',
       confidence: 0.95,
-      artifact: {
-        artifact_id: 'art_webview_hook',
-        artifact_type: 'hook_log',
-        path: 'artifacts/dynamic/review_2026_000143/hooks/webview_loadurl_br.json',
-        sha256: 'sha256:e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6',
-        mime_type: 'application/json',
-      },
+      artifact: { artifact_id: 'art_webview_hook', artifact_type: 'hook_log', path: 'artifacts/dynamic/review_2026_000143/hooks/webview_loadurl_br.json', sha256: 'sha256:e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6', mime_type: 'application/json' },
     },
     {
       evidence_id: 'ev_screenshot',
@@ -270,13 +368,7 @@ const GRC_001_EVIDENCE: DynamicEvidencePackage = {
       description: 'Overlay capture shows offer page rendered while app UI shows benign splash screen.',
       severity: 'high',
       confidence: 0.88,
-      artifact: {
-        artifact_id: 'art_screenshot',
-        artifact_type: 'screenshot',
-        path: 'artifacts/dynamic/review_2026_000143/screenshots/webview_payload.png',
-        sha256: 'sha256:f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7',
-        mime_type: 'image/png',
-      },
+      artifact: { artifact_id: 'art_screenshot', artifact_type: 'screenshot', path: 'artifacts/dynamic/review_2026_000143/screenshots/webview_payload.png', sha256: 'sha256:f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7', mime_type: 'image/png' },
     },
   ],
   runtime_trace: [
@@ -296,25 +388,81 @@ const GRC_001_EVIDENCE: DynamicEvidencePackage = {
 
 // =====================================================================
 // GOLDEN CASE 002 — Riskware: Remote config flag enables hidden behavior
+// FUNNEL: install ok → scorecard 8 → gate → dynamic (in progress)
 // =====================================================================
+
+const GRC_002_IDENTITY = {
+  app_review_id: 'review_2026_000167',
+  queue_item_id: 'qitem_002',
+  package_name: 'com.brightwave.flashlight',
+  app_name: 'BrightWave Flashlight Pro',
+  version_name: '2.8.0',
+  version_code: 280,
+  category_id: 'riskware',
+  category_name: 'Riskware',
+};
+
+const GRC_002_SCORECARD: StaticFunnelScorecard = {
+  schema_version: '1.0.0',
+  event_type: 'StaticFunnelScorecard',
+  message_id: 'msg_grc002_scorecard_01',
+  created_at: '2026-05-27T07:00:00Z',
+  source_agent: 'StaticFunnelWorker',
+  case_identity: GRC_002_IDENTITY,
+  install_verification: makeInstallVerification(true),
+  static_slice: {
+    status: 'completed',
+    decompile_status: 'success',
+    manifest_parsed: true,
+    native_files_detected: false,
+    network_strings_detected: true,
+    webview_usage_detected: false,
+    candidate_flows: [
+      {
+        flow_id: 'flow_config_flag_001',
+        summary: 'show_offer remote config flag gates OfferwallController.start().',
+        source: 'RemoteConfigClient.fetch',
+        sink: 'OfferwallController.start',
+        confidence: 0.79,
+      },
+    ],
+  },
+  rubric_potential: {
+    candidate_score: 8,
+    threshold_for_dynamic_analysis: 8,
+    requires_dynamic_analysis: true,
+    reason: 'Remote config flag + endpoint together reach threshold. Behavior delta must be confirmed dynamically.',
+  },
+  candidate_iocs: [
+    { ioc_id: 'rw_remote_config_flag', level: 'medium', confidence: 0.79, reason: 'show_offer flag branches into OfferwallController.start().' },
+    { ioc_id: 'rw_c2_endpoint', level: 'medium', confidence: 0.74, reason: 'Endpoint cfg.brightwave-cdn.io/v1/flags governs runtime behavior.' },
+  ],
+  missing_rubric_signals: [
+    { ioc_id: 'rw_remote_controlled_webview', ioc_name: 'Remote-controlled WebView destination', reason: 'No WebView usage detected.' },
+    { ioc_id: 'rw_hidden_webview', ioc_name: 'Hidden or misleading WebView behavior', reason: 'No WebView usage detected.' },
+  ],
+  checksum: 'sha256:5c0recardgrc002bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+};
+
+const GRC_002_GATE: GateDecision = {
+  case_identity: GRC_002_IDENTITY,
+  policy_applied: RISKWARE_GATE_POLICY,
+  candidate_score: 8,
+  triggered_force_rules: [],
+  status: 'DYNAMIC_ANALYSIS_REQUIRED',
+  next_step: 'BUILD_DYNAMIC_MISSION_PACKAGE',
+  explanation: 'Candidate score (8) meets dynamic_analysis_threshold (8). Routing to dynamic.',
+  decided_at: '2026-05-27T07:01:00Z',
+};
 
 const GRC_002_MISSION: ReviewMissionPackage = {
   schema_version: '1.0.0',
   event_type: 'ReviewMissionPackage',
   message_id: 'msg_grc002_mission_01',
-  created_at: '2026-05-26T18:00:00Z',
+  created_at: '2026-05-27T07:05:00Z',
   source_agent: 'ProducerStaticTriageAgent',
   target_agent: 'ConsumerDynamicEvidenceAgent',
-  case_identity: {
-    app_review_id: 'review_2026_000167',
-    queue_item_id: 'qitem_002',
-    package_name: 'com.brightwave.flashlight',
-    app_name: 'BrightWave Flashlight Pro',
-    version_name: '2.8.0',
-    version_code: 280,
-    category_id: 'riskware',
-    category_name: 'Riskware',
-  },
+  case_identity: GRC_002_IDENTITY,
   rubric_reference: {
     rubric_id: RISKWARE_RUBRIC.rubric_id,
     rubric_version: RISKWARE_RUBRIC.rubric_version,
@@ -331,38 +479,17 @@ const GRC_002_MISSION: ReviewMissionPackage = {
   },
   static_triage: {
     candidate_score: 8,
-    top_ioc_candidates: [
-      {
-        ioc_id: 'rw_remote_config_flag',
-        level: 'medium',
-        confidence: 0.79,
-        reason: 'RemoteConfig.getBoolean("show_offer") branches into OfferwallController.start().',
-      },
-      {
-        ioc_id: 'rw_c2_endpoint',
-        level: 'medium',
-        confidence: 0.74,
-        reason: 'Remote config endpoint https://cfg.brightwave-cdn.io/v1/flags governs runtime behavior.',
-      },
-    ],
+    top_ioc_candidates: GRC_002_SCORECARD.candidate_iocs,
     execution_hypothesis: {
-      summary:
-        'A remote config flag toggles an offerwall flow that is hidden behind the flashlight UI.',
-      suspected_flow: [
-        'App launch',
-        'RemoteConfigClient.fetch()',
-        'show_offer flag read',
-        'OfferwallController.start() when flag true',
-      ],
+      summary: 'A remote config flag toggles an offerwall flow that is hidden behind the flashlight UI.',
+      suspected_flow: ['App launch', 'RemoteConfigClient.fetch()', 'show_offer flag read', 'OfferwallController.start() when flag true'],
       function_call_trace: [
         { order: 1, class: 'com.brightwave.MainActivity', method: 'onResume', reason: 'Entry' },
         { order: 2, class: 'com.brightwave.config.RemoteConfigClient', method: 'fetch', reason: 'Pulls feature flags' },
         { order: 3, class: 'com.brightwave.offer.OfferwallController', method: 'start', reason: 'Flag-gated payload' },
       ],
     },
-    suspicious_urls: [
-      { url: 'https://cfg.brightwave-cdn.io/v1/flags', severity: 'medium', reason: 'Remote feature-flag endpoint' },
-    ],
+    suspicious_urls: [{ url: 'https://cfg.brightwave-cdn.io/v1/flags', severity: 'medium', reason: 'Remote feature-flag endpoint' }],
     suspicious_native_files: [],
     suggested_hooks: [
       { target: 'com.brightwave.config.RemoteConfigClient.fetch', goal: 'Capture remote config response' },
@@ -374,20 +501,9 @@ const GRC_002_MISSION: ReviewMissionPackage = {
       hypothesis_id: 'hyp_grc002_flag',
       title: 'Remote config flag enables hidden offerwall',
       related_iocs: ['rw_remote_config_flag', 'rw_c2_endpoint'],
-      static_basis: [
-        'show_offer flag drives OfferwallController.start',
-        'Remote config endpoint is the sole source of the flag',
-      ],
-      validation_steps: [
-        'Baseline US run',
-        'ID VPN run',
-        'Hook RemoteConfigClient.fetch',
-        'Compare runtime behavior across countries',
-      ],
-      strong_evidence_definition: [
-        'Different flag values returned across countries',
-        'Hidden behavior triggers only when flag=true',
-      ],
+      static_basis: ['show_offer flag drives OfferwallController.start', 'Remote config endpoint is the sole source of the flag'],
+      validation_steps: ['Baseline US run', 'ID VPN run', 'Hook RemoteConfigClient.fetch', 'Compare runtime behavior across countries'],
+      strong_evidence_definition: ['Different flag values returned across countries', 'Hidden behavior triggers only when flag=true'],
       stop_condition: 'Stop once behavior delta is confirmed with config capture',
     },
   ],
@@ -409,10 +525,113 @@ const GRC_002_MISSION: ReviewMissionPackage = {
 };
 
 // =====================================================================
-// Compose queue cases at different pipeline stages
+// NEW: CLOSED-EARLY CASE — Static funnel insufficient potential
 // =====================================================================
 
-function buildReportFor(mission: ReviewMissionPackage, evidence: DynamicEvidencePackage): SubmissionReport {
+const CLOSURE_IDENTITY = {
+  app_review_id: 'review_2026_000245',
+  queue_item_id: 'qitem_005',
+  package_name: 'com.lumenlabs.notepad',
+  app_name: 'Lumen Notepad',
+  version_name: '5.0.2',
+  version_code: 502,
+  category_id: 'riskware',
+  category_name: 'Riskware',
+};
+
+const CLOSURE_SCORECARD: StaticFunnelScorecard = {
+  schema_version: '1.0.0',
+  event_type: 'StaticFunnelScorecard',
+  message_id: 'msg_clo_scorecard_01',
+  created_at: '2026-05-27T08:20:00Z',
+  source_agent: 'StaticFunnelWorker',
+  case_identity: CLOSURE_IDENTITY,
+  install_verification: makeInstallVerification(true),
+  static_slice: {
+    status: 'completed',
+    decompile_status: 'success',
+    manifest_parsed: true,
+    native_files_detected: false,
+    network_strings_detected: true,
+    webview_usage_detected: true,
+    candidate_flows: [
+      {
+        flow_id: 'flow_basic_webview_001',
+        summary: 'WebView is used to render markdown help inside settings.',
+        source: 'AssetLoader.loadHelpHtml',
+        sink: 'HelpWebView.loadDataWithBaseURL',
+        confidence: 0.36,
+      },
+    ],
+  },
+  rubric_potential: {
+    candidate_score: 2,
+    threshold_for_dynamic_analysis: 8,
+    requires_dynamic_analysis: false,
+    reason:
+      'Only weak WebView usage was found. No suspicious endpoint, C2/config behavior, native risk indicators, or response-to-WebView flow were identified.',
+  },
+  candidate_iocs: [
+    {
+      ioc_id: 'rw_hidden_webview',
+      level: 'weak',
+      confidence: 0.36,
+      reason: 'WebView loads bundled help content with no remote URL influence.',
+    },
+  ],
+  missing_rubric_signals: [
+    { ioc_id: 'rw_c2_endpoint', ioc_name: 'Suspicious C2 / remote config endpoint', reason: 'No remote-control endpoints found; networking limited to crash reporter.' },
+    { ioc_id: 'rw_remote_controlled_webview', ioc_name: 'Remote-controlled WebView destination', reason: 'WebView sink loads bundled assets only.' },
+    { ioc_id: 'rw_remote_config_flag', ioc_name: 'Remote config flag enables hidden behavior', reason: 'No remote config client present.' },
+  ],
+  checksum: 'sha256:5c0recardclo01cccccccccccccccccccccccccccccccccccccccccccccccccc',
+};
+
+const CLOSURE_GATE: GateDecision = {
+  case_identity: CLOSURE_IDENTITY,
+  policy_applied: RISKWARE_GATE_POLICY,
+  candidate_score: 2,
+  triggered_force_rules: [],
+  status: 'CLOSE_EARLY_STATIC_INSUFFICIENT',
+  next_step: 'GENERATE_STATIC_CLOSURE_REPORT',
+  explanation:
+    'Candidate score (2) is below auto_close_below_score (4) and no force-dynamic rule triggered. Close with insufficient static potential.',
+  decided_at: '2026-05-27T08:21:00Z',
+};
+
+const CLOSURE_REPORT: StaticClosureReport = {
+  report_id: `closure_${CLOSURE_IDENTITY.app_review_id}`,
+  report_type: 'StaticClosureReport',
+  case_identity: CLOSURE_IDENTITY,
+  install_verification: CLOSURE_SCORECARD.install_verification,
+  rubric_potential: CLOSURE_SCORECARD.rubric_potential,
+  checked_iocs: RISKWARE_RUBRIC.iocs.map(i => ({
+    ioc_id: i.ioc_id,
+    ioc_name: i.name,
+    outcome: i.ioc_id === 'rw_hidden_webview' ? ('matched' as const) : ('not_matched' as const),
+  })),
+  found_weak_signals: CLOSURE_SCORECARD.candidate_iocs,
+  missing_strong_signals: CLOSURE_SCORECARD.missing_rubric_signals,
+  decision_reason: CLOSURE_GATE.explanation,
+  limitations: [
+    'This closure reflects insufficient static rubric potential, not a guarantee of benign behavior.',
+    'Future versions may introduce dynamic behavior worth re-investigating.',
+  ],
+  final_status: 'Closed early: insufficient static rubric potential for deep dynamic analysis.',
+  created_at: '2026-05-27T08:22:00Z',
+};
+
+// =====================================================================
+// Reconcile + build deep inspection report for GRC-001
+// =====================================================================
+
+function buildDeepReport(
+  scorecard: StaticFunnelScorecard,
+  gate: GateDecision,
+  mission: ReviewMissionPackage,
+  evidence: DynamicEvidencePackage,
+  lock: QueueLock,
+): DeepInspectionReport {
   const reconciled = reconcileScores(
     RISKWARE_RUBRIC,
     mission.static_triage.top_ioc_candidates,
@@ -421,8 +640,8 @@ function buildReportFor(mission: ReviewMissionPackage, evidence: DynamicEvidence
   const final_score = reconciled.reduce((acc, r) => acc + r.final_points, 0);
   const static_score = sumIocPoints(mission.static_triage.top_ioc_candidates);
   const dynamic_score = sumIocPoints(evidence.ioc_scores);
-  return {
-    report_id: `report_${mission.case_identity.app_review_id}`,
+  const base: SubmissionReport = {
+    report_id: `deep_report_${mission.case_identity.app_review_id}`,
     case_identity: mission.case_identity,
     verdict_candidate: verdictFromScore(final_score),
     confidence: evidence.execution_summary.confidence,
@@ -443,30 +662,65 @@ function buildReportFor(mission: ReviewMissionPackage, evidence: DynamicEvidence
         : 'Hold and request additional dynamic validation.',
     created_at: evidence.created_at,
   };
+  return {
+    ...base,
+    report_type: 'DeepInspectionReport',
+    queue_lock: lock,
+    install_verification: scorecard.install_verification,
+    static_slice_summary: scorecard.static_slice,
+    scorecard,
+    gate_decision: gate,
+    why_dynamic_was_triggered: gate.explanation,
+    human_review_checklist: [
+      { item: 'Confirm verdict candidate matches policy', required: true },
+      { item: 'Verify evidence artifacts are accessible', required: true },
+      { item: 'Confirm no off-policy IOC scoring occurred', required: true },
+      { item: 'Review limitations and decide if more dynamic runs are needed', required: false },
+      { item: 'Approve recommendation', required: true },
+    ],
+  };
 }
 
-const GRC_001_REPORT = buildReportFor(GRC_001_MISSION, GRC_001_EVIDENCE);
+const GRC_001_REPORT = buildDeepReport(GRC_001_SCORECARD, GRC_001_GATE, GRC_001_MISSION, GRC_001_EVIDENCE, GRC_001_LOCK);
+
+// =====================================================================
+// Compose queue cases at different pipeline stages
+// =====================================================================
+
+const EMPTY_STATIC_TRIAGE = {
+  candidate_score: 0,
+  top_ioc_candidates: [],
+  execution_hypothesis: { summary: '', suspected_flow: [], function_call_trace: [] },
+  suspicious_urls: [],
+  suspicious_native_files: [],
+  suggested_hooks: [],
+};
 
 export const QUEUE_CASES: QueueCase[] = [
-  // Case 1: Full loop complete — golden case 001
+  // Case 1 (FULL LOOP): GRC-001 — funnel → gate → dynamic → deep report
   {
-    case_identity: GRC_001_MISSION.case_identity,
-    producer_status: 'REPORT_DRAFTED',
-    consumer_status: 'PACKAGE_SENT',
+    case_identity: GRC_001_IDENTITY,
+    producer_status: 'DEEP_REPORT_READY',
+    consumer_status: 'EVIDENCE_PACKAGE_SENT',
     priority: 'high',
     static_score: GRC_001_REPORT.static_score,
     dynamic_score: GRC_001_REPORT.dynamic_score,
     final_score: GRC_001_REPORT.final_score,
     metadata: GRC_001_MISSION.producer_metadata,
     rubric: RISKWARE_RUBRIC,
+    queue_lock: GRC_001_LOCK,
+    install_verification: GRC_001_INSTALL,
+    static_slice_summary: GRC_001_SLICE,
+    scorecard: GRC_001_SCORECARD,
+    gate_decision: GRC_001_GATE,
     static_triage: GRC_001_MISSION.static_triage,
     mission_package: GRC_001_MISSION,
     evidence_package: GRC_001_EVIDENCE,
     report: GRC_001_REPORT,
   },
-  // Case 2: Mission sent, Consumer running — golden case 002
+  // Case 2 (DYNAMIC IN PROGRESS): GRC-002 — funnel → gate → dynamic running
   {
-    case_identity: GRC_002_MISSION.case_identity,
+    case_identity: GRC_002_IDENTITY,
     producer_status: 'CONSUMER_RUNNING',
     consumer_status: 'DYNAMIC_RUNNING',
     priority: 'medium',
@@ -475,10 +729,42 @@ export const QUEUE_CASES: QueueCase[] = [
     final_score: 0,
     metadata: GRC_002_MISSION.producer_metadata,
     rubric: RISKWARE_RUBRIC,
+    queue_lock: makeLock(GRC_002_IDENTITY.app_review_id, GRC_002_IDENTITY.queue_item_id),
+    install_verification: GRC_002_SCORECARD.install_verification,
+    static_slice_summary: GRC_002_SCORECARD.static_slice,
+    scorecard: GRC_002_SCORECARD,
+    gate_decision: GRC_002_GATE,
     static_triage: GRC_002_MISSION.static_triage,
     mission_package: GRC_002_MISSION,
   },
-  // Case 3: Static triage only — mission not yet built
+  // Case 3 (CLOSED EARLY): Lumen Notepad — funnel → gate → closure report
+  {
+    case_identity: CLOSURE_IDENTITY,
+    producer_status: 'STATIC_INSUFFICIENT_CLOSED',
+    consumer_status: null,
+    priority: 'low',
+    static_score: 2,
+    dynamic_score: 0,
+    final_score: 2,
+    metadata: {
+      developer_country: 'CA',
+      developer_reputation: 'medium',
+      developer_account_age_days: 920,
+      related_packages: ['com.lumenlabs.todo'],
+      prior_flags: [],
+      target_markets: [],
+      monetization_signals: [],
+    },
+    rubric: RISKWARE_RUBRIC,
+    queue_lock: makeLock(CLOSURE_IDENTITY.app_review_id, CLOSURE_IDENTITY.queue_item_id),
+    install_verification: CLOSURE_SCORECARD.install_verification,
+    static_slice_summary: CLOSURE_SCORECARD.static_slice,
+    scorecard: CLOSURE_SCORECARD,
+    gate_decision: CLOSURE_GATE,
+    closure_report: CLOSURE_REPORT,
+    static_triage: EMPTY_STATIC_TRIAGE,
+  },
+  // Case 4 (STATIC SLICE COMPLETE): CoinMint Spin & Win — scorecard ready, awaiting gate
   {
     case_identity: {
       app_review_id: 'review_2026_000201',
@@ -490,7 +776,7 @@ export const QUEUE_CASES: QueueCase[] = [
       category_id: 'riskware',
       category_name: 'Riskware',
     },
-    producer_status: 'STATIC_TRIAGED',
+    producer_status: 'STATIC_SCORECARD_READY',
     consumer_status: null,
     priority: 'critical',
     static_score: 12,
@@ -506,21 +792,31 @@ export const QUEUE_CASES: QueueCase[] = [
       monetization_signals: ['rewards SDK', 'offerwall integration'],
     },
     rubric: RISKWARE_RUBRIC,
+    queue_lock: makeLock('review_2026_000201', 'qitem_003'),
+    install_verification: makeInstallVerification(true),
+    static_slice_summary: {
+      status: 'completed',
+      decompile_status: 'success',
+      manifest_parsed: true,
+      native_files_detected: false,
+      network_strings_detected: true,
+      webview_usage_detected: true,
+      candidate_flows: [
+        {
+          flow_id: 'flow_rewards_webview_001',
+          summary: 'Reward server URL is opened in WebView on payout.',
+          source: 'RewardsApi.fetch',
+          sink: 'RewardsController.openWindow',
+          confidence: 0.78,
+        },
+      ],
+    },
+    scorecard: undefined, // illustrate a case where scorecard is generated but gate not yet applied
     static_triage: {
       candidate_score: 12,
       top_ioc_candidates: [
-        {
-          ioc_id: 'rw_c2_endpoint',
-          level: 'medium',
-          confidence: 0.78,
-          reason: 'Encrypted endpoint resolves at runtime; controls reward payout destination.',
-        },
-        {
-          ioc_id: 'rw_remote_controlled_webview',
-          level: 'medium',
-          confidence: 0.72,
-          reason: 'RewardsController.openWindow consumes server URL field.',
-        },
+        { ioc_id: 'rw_c2_endpoint', level: 'medium', confidence: 0.78, reason: 'Encrypted endpoint resolves at runtime; controls reward payout destination.' },
+        { ioc_id: 'rw_remote_controlled_webview', level: 'medium', confidence: 0.72, reason: 'RewardsController.openWindow consumes server URL field.' },
       ],
       execution_hypothesis: {
         summary: 'Spin-win game opens server-controlled WebView when reward triggers.',
@@ -531,9 +827,8 @@ export const QUEUE_CASES: QueueCase[] = [
       suspicious_native_files: [],
       suggested_hooks: [],
     },
-    mission_package: GRC_002_MISSION, // placeholder, not yet sent
   },
-  // Case 4: New queue arrival
+  // Case 5 (QUEUE LOCKED, FUNNEL RUNNING): Zenith Live Wallpaper
   {
     case_identity: {
       app_review_id: 'review_2026_000219',
@@ -545,7 +840,7 @@ export const QUEUE_CASES: QueueCase[] = [
       category_id: 'riskware',
       category_name: 'Riskware',
     },
-    producer_status: 'QUEUE_IMPORTED',
+    producer_status: 'STATIC_SLICE_RUNNING',
     consumer_status: null,
     priority: 'low',
     static_score: 0,
@@ -561,111 +856,41 @@ export const QUEUE_CASES: QueueCase[] = [
       monetization_signals: [],
     },
     rubric: RISKWARE_RUBRIC,
-    static_triage: {
-      candidate_score: 0,
-      top_ioc_candidates: [],
-      execution_hypothesis: { summary: '', suspected_flow: [], function_call_trace: [] },
-      suspicious_urls: [],
-      suspicious_native_files: [],
-      suggested_hooks: [],
-    },
-    mission_package: GRC_002_MISSION,
+    queue_lock: makeLock('review_2026_000219', 'qitem_004'),
+    install_verification: makeInstallVerification(true),
+    static_triage: EMPTY_STATIC_TRIAGE,
   },
 ];
 
 // =====================================================================
-// PixelBridge append-only event log
+// PixelBridge append-only event log — now includes funnel events
 // =====================================================================
 
-function caseKey(c: QueueCase): string {
-  return `${c.case_identity.app_review_id}/${c.case_identity.package_name}/v${c.case_identity.version_code}/${c.case_identity.category_id}`;
-}
-
 export const BRIDGE_EVENTS: BridgeEvent[] = [
-  {
-    event_id: 'evt_001',
-    message_id: GRC_001_MISSION.message_id,
-    event_type: 'ReviewMissionPackage',
-    case_key: caseKey(QUEUE_CASES[0]),
-    source: 'producer',
-    target: 'consumer',
-    status: 'processed',
-    created_at: GRC_001_MISSION.created_at,
-    checksum: GRC_001_MISSION.checksum,
-    size_bytes: 14_823,
-  },
-  {
-    event_id: 'evt_002',
-    message_id: 'msg_grc001_ack_01',
-    event_type: 'MissionAck',
-    case_key: caseKey(QUEUE_CASES[0]),
-    source: 'consumer',
-    target: 'producer',
-    status: 'processed',
-    created_at: '2026-05-26T20:02:00Z',
-    checksum: 'sha256:11111111111111111111111111111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    size_bytes: 412,
-  },
-  {
-    event_id: 'evt_003',
-    message_id: 'msg_grc001_progress_01',
-    event_type: 'ConsumerProgressUpdate',
-    case_key: caseKey(QUEUE_CASES[0]),
-    source: 'consumer',
-    target: 'producer',
-    status: 'processed',
-    created_at: '2026-05-26T20:18:00Z',
-    checksum: 'sha256:22222222222222222222222222222222bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-    size_bytes: 980,
-  },
-  {
-    event_id: 'evt_004',
-    message_id: GRC_001_EVIDENCE.message_id,
-    event_type: 'DynamicEvidencePackage',
-    case_key: caseKey(QUEUE_CASES[0]),
-    source: 'consumer',
-    target: 'producer',
-    status: 'processed',
-    created_at: GRC_001_EVIDENCE.created_at,
-    checksum: GRC_001_EVIDENCE.checksum,
-    size_bytes: 28_104,
-  },
-  {
-    event_id: 'evt_005',
-    message_id: GRC_002_MISSION.message_id,
-    event_type: 'ReviewMissionPackage',
-    case_key: caseKey(QUEUE_CASES[1]),
-    source: 'producer',
-    target: 'consumer',
-    status: 'processed',
-    created_at: GRC_002_MISSION.created_at,
-    checksum: GRC_002_MISSION.checksum,
-    size_bytes: 11_220,
-  },
-  {
-    event_id: 'evt_006',
-    message_id: 'msg_grc002_ack_01',
-    event_type: 'MissionAck',
-    case_key: caseKey(QUEUE_CASES[1]),
-    source: 'consumer',
-    target: 'producer',
-    status: 'processed',
-    created_at: '2026-05-26T18:01:30Z',
-    checksum: 'sha256:33333333333333333333333333333333cccccccccccccccccccccccccccccccc',
-    size_bytes: 412,
-  },
-  {
-    event_id: 'evt_007',
-    message_id: 'msg_grc002_progress_01',
-    event_type: 'ConsumerProgressUpdate',
-    case_key: caseKey(QUEUE_CASES[1]),
-    source: 'consumer',
-    target: 'producer',
-    status: 'transferred',
-    created_at: '2026-05-27T09:14:00Z',
-    checksum: 'sha256:44444444444444444444444444444444dddddddddddddddddddddddddddddddd',
-    size_bytes: 1_104,
-  },
+  // GRC-001 full chain
+  { event_id: 'evt_grc001_01', message_id: `lock_${GRC_001_IDENTITY.app_review_id}`, event_type: 'QueueLockClaimed', case_key: caseKey({ case_identity: GRC_001_IDENTITY }), source: 'queue', target: 'static_funnel', status: 'processed', created_at: '2026-05-27T08:00:00Z', checksum: 'sha256:lockgrc001aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', size_bytes: 320 },
+  { event_id: 'evt_grc001_02', message_id: 'msg_grc001_install_01', event_type: 'InstallVerification', case_key: caseKey({ case_identity: GRC_001_IDENTITY }), source: 'static_funnel', target: 'mission_control', status: 'processed', created_at: '2026-05-27T08:03:00Z', checksum: 'sha256:installgrc001bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', size_bytes: 780 },
+  { event_id: 'evt_grc001_03', message_id: GRC_001_SCORECARD.message_id, event_type: 'StaticFunnelScorecard', case_key: caseKey({ case_identity: GRC_001_IDENTITY }), source: 'static_funnel', target: 'mission_control', status: 'processed', created_at: GRC_001_SCORECARD.created_at, checksum: GRC_001_SCORECARD.checksum, size_bytes: 5_240 },
+  { event_id: 'evt_grc001_04', message_id: 'msg_grc001_gate_01', event_type: 'GateDecision', case_key: caseKey({ case_identity: GRC_001_IDENTITY }), source: 'mission_control', target: 'mission_control', status: 'processed', created_at: GRC_001_GATE.decided_at, checksum: 'sha256:gategrc001ddddddddddddddddddddddddddddddddddddddddddddddddddd', size_bytes: 640 },
+  { event_id: 'evt_grc001_05', message_id: GRC_001_MISSION.message_id, event_type: 'ReviewMissionPackage', case_key: caseKey({ case_identity: GRC_001_IDENTITY }), source: 'mission_control', target: 'consumer', status: 'processed', created_at: GRC_001_MISSION.created_at, checksum: GRC_001_MISSION.checksum, size_bytes: 14_823 },
+  { event_id: 'evt_grc001_06', message_id: 'msg_grc001_ack_01', event_type: 'MissionAck', case_key: caseKey({ case_identity: GRC_001_IDENTITY }), source: 'consumer', target: 'mission_control', status: 'processed', created_at: '2026-05-27T08:12:00Z', checksum: 'sha256:ackgrc001eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', size_bytes: 412 },
+  { event_id: 'evt_grc001_07', message_id: 'msg_grc001_progress_01', event_type: 'ConsumerProgressUpdate', case_key: caseKey({ case_identity: GRC_001_IDENTITY }), source: 'consumer', target: 'mission_control', status: 'processed', created_at: '2026-05-27T08:32:00Z', checksum: 'sha256:progrc001fffffffffffffffffffffffffffffffffffffffffffffffffff', size_bytes: 980 },
+  { event_id: 'evt_grc001_08', message_id: GRC_001_EVIDENCE.message_id, event_type: 'DynamicEvidencePackage', case_key: caseKey({ case_identity: GRC_001_IDENTITY }), source: 'consumer', target: 'mission_control', status: 'processed', created_at: GRC_001_EVIDENCE.created_at, checksum: GRC_001_EVIDENCE.checksum, size_bytes: 28_104 },
+  { event_id: 'evt_grc001_09', message_id: GRC_001_REPORT.report_id, event_type: 'DeepInspectionReportDraft', case_key: caseKey({ case_identity: GRC_001_IDENTITY }), source: 'mission_control', target: 'mission_control', status: 'processed', created_at: '2026-05-27T09:00:00Z', checksum: 'sha256:deepgrc001gggggggggggggggggggggggggggggggggggggggggggggggggg', size_bytes: 41_320 },
+
+  // GRC-002 chain
+  { event_id: 'evt_grc002_01', message_id: `lock_${GRC_002_IDENTITY.app_review_id}`, event_type: 'QueueLockClaimed', case_key: caseKey({ case_identity: GRC_002_IDENTITY }), source: 'queue', target: 'static_funnel', status: 'processed', created_at: '2026-05-27T06:55:00Z', checksum: 'sha256:lockgrc002hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh', size_bytes: 320 },
+  { event_id: 'evt_grc002_02', message_id: GRC_002_SCORECARD.message_id, event_type: 'StaticFunnelScorecard', case_key: caseKey({ case_identity: GRC_002_IDENTITY }), source: 'static_funnel', target: 'mission_control', status: 'processed', created_at: GRC_002_SCORECARD.created_at, checksum: GRC_002_SCORECARD.checksum, size_bytes: 4_180 },
+  { event_id: 'evt_grc002_03', message_id: 'msg_grc002_gate_01', event_type: 'GateDecision', case_key: caseKey({ case_identity: GRC_002_IDENTITY }), source: 'mission_control', target: 'mission_control', status: 'processed', created_at: GRC_002_GATE.decided_at, checksum: 'sha256:gategrc002iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii', size_bytes: 580 },
+  { event_id: 'evt_grc002_04', message_id: GRC_002_MISSION.message_id, event_type: 'ReviewMissionPackage', case_key: caseKey({ case_identity: GRC_002_IDENTITY }), source: 'mission_control', target: 'consumer', status: 'processed', created_at: GRC_002_MISSION.created_at, checksum: GRC_002_MISSION.checksum, size_bytes: 11_220 },
+  { event_id: 'evt_grc002_05', message_id: 'msg_grc002_ack_01', event_type: 'MissionAck', case_key: caseKey({ case_identity: GRC_002_IDENTITY }), source: 'consumer', target: 'mission_control', status: 'processed', created_at: '2026-05-27T07:06:30Z', checksum: 'sha256:ackgrc002jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj', size_bytes: 412 },
+  { event_id: 'evt_grc002_06', message_id: 'msg_grc002_progress_01', event_type: 'ConsumerProgressUpdate', case_key: caseKey({ case_identity: GRC_002_IDENTITY }), source: 'consumer', target: 'mission_control', status: 'transferred', created_at: '2026-05-27T09:14:00Z', checksum: 'sha256:progrc002kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk', size_bytes: 1_104 },
+
+  // Closure chain
+  { event_id: 'evt_clo_01', message_id: `lock_${CLOSURE_IDENTITY.app_review_id}`, event_type: 'QueueLockClaimed', case_key: caseKey({ case_identity: CLOSURE_IDENTITY }), source: 'queue', target: 'static_funnel', status: 'processed', created_at: '2026-05-27T08:15:00Z', checksum: 'sha256:lockclolllllllllllllllllllllllllllllllllllllllllllllllllllllll', size_bytes: 320 },
+  { event_id: 'evt_clo_02', message_id: CLOSURE_SCORECARD.message_id, event_type: 'StaticFunnelScorecard', case_key: caseKey({ case_identity: CLOSURE_IDENTITY }), source: 'static_funnel', target: 'mission_control', status: 'processed', created_at: CLOSURE_SCORECARD.created_at, checksum: CLOSURE_SCORECARD.checksum, size_bytes: 3_120 },
+  { event_id: 'evt_clo_03', message_id: 'msg_clo_gate_01', event_type: 'GateDecision', case_key: caseKey({ case_identity: CLOSURE_IDENTITY }), source: 'mission_control', target: 'mission_control', status: 'processed', created_at: CLOSURE_GATE.decided_at, checksum: 'sha256:gateclommmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm', size_bytes: 540 },
+  { event_id: 'evt_clo_04', message_id: CLOSURE_REPORT.report_id, event_type: 'StaticClosureReport', case_key: caseKey({ case_identity: CLOSURE_IDENTITY }), source: 'mission_control', target: 'mission_control', status: 'processed', created_at: CLOSURE_REPORT.created_at, checksum: 'sha256:closurereportnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn', size_bytes: 6_840 },
 ];
 
 export function getCaseByReviewId(id: string): QueueCase | undefined {

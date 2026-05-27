@@ -23,16 +23,23 @@ export default function AgentsPage() {
 type WorkerTask = {
   task_id: string;
   task_type:
-    | "producer.metadata_intelligence"
-    | "producer.static_triage"
-    | "producer.build_mission_package"
-    | "producer.reconcile_scores"
-    | "producer.build_submission_report"
-    | "consumer.import_mission"
-    | "consumer.build_dynamic_plan"
-    | "consumer.record_experiment"
-    | "consumer.score_evidence"
-    | "consumer.build_evidence_package";
+    // Funnel layer
+    | "queue.lock_next_app"
+    | "producer.verify_install"
+    | "producer.static_slice"
+    | "producer.generate_static_scorecard"
+    | "producer.decide_static_gate"
+    | "producer.generate_static_closure_report"
+    // Dynamic mission layer
+    | "producer.build_dynamic_mission"
+    | "consumer.import_dynamic_mission"
+    | "consumer.collect_dynamic_evidence"
+    | "consumer.score_dynamic_evidence"
+    | "consumer.build_evidence_package"
+    // Mission Control layer
+    | "mission_control.reconcile_scores"
+    | "mission_control.generate_deep_inspection_report"
+    | "mission_control.prepare_human_review";
   case_identity: CaseIdentity;
   inputs: Record<string, unknown>;
   constraints: { max_iterations: number; max_runtime_seconds: number; output_schema: string };
@@ -50,19 +57,23 @@ type WorkerResult = {
         </pre>
       </Panel>
 
-      {ALL_PROMPTS.map((p, i) => (
+      {ALL_PROMPTS.map((p, i) => {
+        const roleColor = {
+          Funnel: 'text-accent-blue border-accent-blue/30',
+          Gate: 'text-accent-amber border-accent-amber/30',
+          Producer: 'text-accent-violet border-accent-violet/30',
+          Consumer: 'text-accent-green border-accent-green/30',
+          MissionControl: 'text-accent-green border-accent-green/30',
+        }[p.role];
+        return (
         <Panel
           key={p.agent_id}
           title={p.agent_name}
-          section={`0${i + 1}`}
+          section={String(i + 1).padStart(2, '0')}
           subtitle={p.description}
           action={
             <span
-              className={`px-2 py-0.5 text-[10px] tracking-widest border rounded bg-bg-card ${
-                p.role === 'Producer'
-                  ? 'text-accent-violet border-accent-violet/30'
-                  : 'text-accent-green border-accent-green/30'
-              }`}
+              className={`px-2 py-0.5 text-[10px] tracking-widest border rounded bg-bg-card ${roleColor}`}
             >
               {p.role.toUpperCase()}
             </span>
@@ -113,7 +124,8 @@ type WorkerResult = {
             </div>
           </div>
         </Panel>
-      ))}
+      );
+      })}
     </div>
   );
 }

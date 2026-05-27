@@ -2,12 +2,25 @@ import { BRIDGE_EVENTS } from '@/lib/mock-data';
 import { Panel, KV } from '@/components/Panel';
 
 const TYPE_COLORS: Record<string, string> = {
+  QueueLockClaimed: 'text-ink-secondary border-ink-muted/40',
+  InstallVerification: 'text-accent-blue border-accent-blue/30',
+  StaticFunnelScorecard: 'text-accent-blue border-accent-blue/40',
+  GateDecision: 'text-accent-amber border-accent-amber/40',
+  StaticClosureReport: 'text-ink-secondary border-ink-muted/40',
   ReviewMissionPackage: 'text-accent-violet border-accent-violet/30',
   MissionAck: 'text-accent-blue border-accent-blue/30',
   MissionRejected: 'text-accent-red border-accent-red/30',
   ConsumerProgressUpdate: 'text-accent-amber border-accent-amber/30',
   DynamicEvidencePackage: 'text-accent-green border-accent-green/30',
-  SubmissionReportDraft: 'text-accent-green border-accent-green/30',
+  DeepInspectionReportDraft: 'text-accent-green border-accent-green/40',
+};
+
+const NODE_COLORS: Record<string, string> = {
+  queue: 'text-ink-secondary',
+  mission_control: 'text-accent-green',
+  static_funnel: 'text-accent-blue',
+  producer: 'text-accent-violet',
+  consumer: 'text-accent-green',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -34,20 +47,26 @@ export default function BridgePage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <Panel title="Producer Outbox" section="01">
+      <div className="grid grid-cols-4 gap-4">
+        <Panel title="Static Funnel" section="01">
           <BridgeColumn
-            events={BRIDGE_EVENTS.filter(e => e.source === 'producer')}
+            events={BRIDGE_EVENTS.filter(e => e.source === 'static_funnel' || e.source === 'queue')}
+            color="blue"
+          />
+        </Panel>
+        <Panel title="Mission Control" section="02">
+          <BridgeColumn
+            events={BRIDGE_EVENTS.filter(e => e.source === 'mission_control')}
             color="violet"
           />
         </Panel>
-        <Panel title="In Transit" section="02">
+        <Panel title="In Transit" section="03">
           <BridgeColumn
             events={BRIDGE_EVENTS.filter(e => e.status === 'transferred')}
             color="amber"
           />
         </Panel>
-        <Panel title="Consumer Outbox" section="03">
+        <Panel title="Consumer Outbox" section="04">
           <BridgeColumn
             events={BRIDGE_EVENTS.filter(e => e.source === 'consumer')}
             color="green"
@@ -81,13 +100,9 @@ export default function BridgePage() {
                 </td>
                 <td className="px-3 font-mono text-[10px] text-ink-muted">{ev.message_id}</td>
                 <td className="px-3 text-[10px]">
-                  <span className={ev.source === 'producer' ? 'text-accent-violet' : 'text-accent-green'}>
-                    {ev.source}
-                  </span>
+                  <span className={NODE_COLORS[ev.source] ?? 'text-ink-secondary'}>{ev.source}</span>
                   <span className="text-ink-muted mx-1">→</span>
-                  <span className={ev.target === 'producer' ? 'text-accent-violet' : 'text-accent-green'}>
-                    {ev.target}
-                  </span>
+                  <span className={NODE_COLORS[ev.target] ?? 'text-ink-secondary'}>{ev.target}</span>
                 </td>
                 <td className="px-3 text-right tabular-nums text-ink-secondary">
                   {ev.size_bytes.toLocaleString()}b
@@ -164,12 +179,13 @@ function BridgeColumn({
   color,
 }: {
   events: typeof BRIDGE_EVENTS;
-  color: 'violet' | 'amber' | 'green';
+  color: 'violet' | 'amber' | 'green' | 'blue';
 }) {
   const colorClass = {
     violet: 'border-accent-violet/20',
     amber: 'border-accent-amber/20',
     green: 'border-accent-green/20',
+    blue: 'border-accent-blue/20',
   }[color];
   if (events.length === 0) {
     return <div className="text-xs text-ink-muted text-center py-4">empty</div>;

@@ -1,4 +1,19 @@
-import { IocRubric } from './types';
+import { GatePolicy, IocRubric } from './types';
+
+// Decision-gate policy for the riskware category.
+// The gate is deterministic — Static Funnel proposes, gate disposes.
+export const RISKWARE_GATE_POLICY: GatePolicy = {
+  category_id: 'riskware',
+  dynamic_analysis_threshold: 8, // candidate_score >= 8 → dynamic
+  auto_close_below_score: 4,     // candidate_score < 4 → close early
+  human_review_band: { min: 4, max: 7 }, // gray band → human static-gate review
+  force_dynamic_if: [
+    'suspicious_native_file_high',
+    'known_bad_domain',
+    'developer_prior_flags',
+    'remote_controlled_webview_candidate',
+  ],
+};
 
 export const RISKWARE_RUBRIC: IocRubric = {
   rubric_id: 'rubric_riskware_v1',

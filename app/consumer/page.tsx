@@ -4,7 +4,7 @@ import { Panel } from '@/components/Panel';
 import { StatusBadge, PriorityBadge } from '@/components/StatusBadge';
 
 export default function ConsumerInbox() {
-  const visibleCases = QUEUE_CASES.filter(c => c.consumer_status !== null);
+  const visibleCases = QUEUE_CASES.filter(c => c.consumer_status !== null && c.mission_package);
 
   return (
     <div className="space-y-6">
@@ -42,10 +42,10 @@ export default function ConsumerInbox() {
                   <StatusBadge status={c.consumer_status} side="consumer" />
                 </div>
                 <div className="col-span-2 text-xs text-ink-muted">
-                  budget <span className="text-ink-primary">{c.mission_package.consumer_budget.max_total_minutes}m</span>
+                  budget <span className="text-ink-primary">{c.mission_package!.consumer_budget.max_total_minutes}m</span>
                 </div>
                 <div className="col-span-2 text-xs text-ink-muted text-right">
-                  {c.mission_package.geo_execution_plan.recommended_vpn_countries.length} VPN countries
+                  {c.mission_package!.geo_execution_plan.recommended_vpn_countries.length} VPN countries
                 </div>
               </div>
             </Link>

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getCaseByReviewId } from '@/lib/mock-data';
 import { Panel, KV } from '@/components/Panel';
-import { VerdictBadge, IocLevelBadge } from '@/components/StatusBadge';
+import { GateBadge, IocLevelBadge, VerdictBadge } from '@/components/StatusBadge';
 import { ScoreBar } from '@/components/ScoreBar';
 
 export default async function ReportPage({ params }: { params: Promise<{ id: string }> }) {
@@ -22,7 +22,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           ← BACK TO CASE FILE
         </Link>
         <div className="text-[10px] text-ink-muted tracking-[0.3em] mt-3 mb-1">
-          // SUBMISSION REPORT
+          // DEEP INSPECTION REPORT · MissionControlReportWorker
         </div>
         <h1 className="text-2xl font-semibold">{c.case_identity.app_name}</h1>
         <div className="text-xs text-ink-secondary font-mono mt-1">
@@ -50,8 +50,45 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
         </div>
       </Panel>
 
+      {/* Why dynamic was triggered */}
+      <Panel title="Why Dynamic Was Triggered" section="02" subtitle="gate decision audit">
+        <div className="grid grid-cols-3 gap-4 mb-3">
+          <div className="card p-3">
+            <div className="label mb-2">candidate score</div>
+            <div className="text-2xl font-semibold tabular-nums">
+              {r.scorecard.rubric_potential.candidate_score}
+              <span className="text-sm text-ink-muted">
+                {' '}/ {r.scorecard.rubric_potential.threshold_for_dynamic_analysis}
+              </span>
+            </div>
+          </div>
+          <div className="card p-3">
+            <div className="label mb-2">gate decision</div>
+            <GateBadge status={r.gate_decision.status} />
+          </div>
+          <div className="card p-3">
+            <div className="label mb-2">force-rules triggered</div>
+            {r.gate_decision.triggered_force_rules.length ? (
+              <div className="flex flex-wrap gap-1">
+                {r.gate_decision.triggered_force_rules.map(rule => (
+                  <span
+                    key={rule}
+                    className="px-2 py-0.5 text-[10px] tracking-widest border border-accent-violet/30 rounded bg-accent-violet/10 text-accent-violet font-mono"
+                  >
+                    {rule}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-[10px] text-ink-muted">none</span>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-ink-secondary">{r.why_dynamic_was_triggered}</p>
+      </Panel>
+
       {/* Reconciled scores table */}
-      <Panel title="IOC Score Reconciliation" section="02" subtitle="strongest level per IOC · static vs dynamic">
+      <Panel title="IOC Score Reconciliation" section="03" subtitle="strongest level per IOC · static vs dynamic">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-[10px] tracking-widest text-ink-muted border-b divider">
@@ -93,15 +130,15 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
       </Panel>
 
       <div className="grid grid-cols-2 gap-6">
-        <Panel title="Static Summary" section="03">
+        <Panel title="Static Summary" section="04">
           <p className="text-xs text-ink-secondary">{r.static_summary}</p>
         </Panel>
-        <Panel title="Dynamic Summary" section="04">
+        <Panel title="Dynamic Summary" section="05">
           <p className="text-xs text-ink-secondary">{r.dynamic_summary}</p>
         </Panel>
       </div>
 
-      <Panel title="Execution Flow" section="05" subtitle="runtime trace as evidence">
+      <Panel title="Execution Flow" section="06" subtitle="runtime trace as evidence">
         <ol className="space-y-1.5 text-xs">
           {r.execution_flow.map((step, i) => (
             <li key={i} className="flex gap-3 font-mono">
@@ -113,7 +150,24 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
       </Panel>
 
       <div className="grid grid-cols-2 gap-6">
-        <Panel title="Metadata Intelligence" section="06">
+        <Panel title="Queue Lock + Install" section="07">
+          <div className="space-y-1">
+            <KV k="Locked by" v={r.queue_lock.locked_by} />
+            <KV k="Locked at" v={new Date(r.queue_lock.locked_at).toLocaleString()} />
+            <KV k="Install method" v={r.install_verification.install_method} />
+            <KV
+              k="Install status"
+              v={
+                <span className={r.install_verification.status === 'success' ? 'text-accent-green' : 'text-accent-red'}>
+                  {r.install_verification.status.toUpperCase()}
+                </span>
+              }
+            />
+            <KV k="First launch" v={r.install_verification.first_launch_success ? 'success' : 'failed'} />
+          </div>
+        </Panel>
+
+        <Panel title="Metadata Intelligence" section="08">
           <div className="space-y-1">
             <KV k="Developer country" v={r.metadata.developer_country} />
             <KV k="Reputation" v={r.metadata.developer_reputation} />
@@ -129,8 +183,10 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
             </div>
           )}
         </Panel>
+      </div>
 
-        <Panel title="Limitations" section="07" subtitle="what was NOT proven">
+      <div className="grid grid-cols-2 gap-6">
+        <Panel title="Limitations" section="09" subtitle="what was NOT proven">
           {r.limitations.length ? (
             <ul className="text-xs text-ink-secondary space-y-1.5">
               {r.limitations.map((l, i) => (
@@ -143,6 +199,27 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           ) : (
             <div className="text-xs text-ink-muted">No limitations recorded.</div>
           )}
+        </Panel>
+
+        <Panel title="Human Review Checklist" section="10" subtitle="reviewer cannot submit until required items pass">
+          <ul className="space-y-2 text-xs">
+            {r.human_review_checklist.map((item, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  disabled
+                  className="mt-0.5 accent-accent-green"
+                />
+                <span className={item.required ? 'text-ink-primary' : 'text-ink-secondary'}>
+                  {item.item}
+                  {item.required && <span className="text-accent-red ml-1">*</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 text-[10px] text-ink-muted">
+            <span className="text-accent-red">*</span> required to submit
+          </div>
         </Panel>
       </div>
     </div>
