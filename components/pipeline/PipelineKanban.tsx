@@ -48,9 +48,16 @@ const ACCENT_TEXT: Record<Column['accent'], string> = {
 function classifyCase(c: QueueCase): ColumnId {
   const ps = c.producer_status;
   // Closed-terminal states first
-  if (ps === 'METADATA_INSUFFICIENT_CLOSED' || ps === 'STATIC_INSUFFICIENT_CLOSED' || ps === 'FALSE_POSITIVE_CLOSED' || ps === 'SUBMITTED' || ps === 'CLOSED') return 'closed';
+  if (
+    ps === 'METADATA_INSUFFICIENT_CLOSED' ||
+    ps === 'STATIC_INSUFFICIENT_CLOSED' ||
+    ps === 'FALSE_POSITIVE_CLOSED' ||
+    ps === 'EXPLORATORY_FINDING_READY' ||
+    ps === 'SUBMITTED' ||
+    ps === 'CLOSED'
+  ) return 'closed';
   // Reporting
-  if (ps === 'DEEP_REPORT_READY' || ps === 'HUMAN_REVIEW_READY' || ps === 'EXPLORATORY_FINDING_READY' || ps === 'SCORES_RECONCILED') return 'report';
+  if (ps === 'DEEP_REPORT_READY' || ps === 'HUMAN_REVIEW_READY' || ps === 'SCORES_RECONCILED') return 'report';
   // Dynamic
   if (ps === 'DYNAMIC_ANALYSIS_REQUIRED' || ps === 'DYNAMIC_MISSION_READY' || ps === 'DYNAMIC_MISSION_SENT' || ps === 'CONSUMER_ACKED' || ps === 'CONSUMER_RUNNING' || ps === 'EVIDENCE_RECEIVED') return 'dynamic';
   // Gate

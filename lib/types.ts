@@ -210,6 +210,14 @@ export type ReconciledIocScore = {
   final_level: IocLevel;
   final_points: number;
   evidence_ids: string[];
+  // Audit trail per IOC — reviewers can see WHY each level was assigned
+  // and which worker scored it.
+  static_reason?: string;
+  static_confidence?: number;
+  static_scored_by?: string;
+  dynamic_reason?: string;
+  dynamic_confidence?: number;
+  dynamic_scored_by?: string;
 };
 
 export type SubmissionReport = {
@@ -515,10 +523,19 @@ export type StaticClosureReport = {
 export type DeepInspectionReport = SubmissionReport & {
   report_type: 'DeepInspectionReport';
   queue_lock: QueueLock;
+  metadata_scorecard?: MetadataScorecard;
+  metadata_gate?: MetadataGateDecision;
   install_verification: InstallVerification;
+  slice_verification?: SliceVerification;
   static_slice_summary: StaticSliceSummary;
   scorecard: StaticFunnelScorecard;
   gate_decision: GateDecision;
+  // The full evidence package the Investigator returned. Embedding it
+  // here lets the report mount TraceWithEvidence + EvidenceBoard on
+  // the same page so #evidence-<id> anchors actually resolve.
+  evidence_package?: DynamicEvidencePackage;
+  function_call_trace?: FunctionCallTraceStep[];
+  rubric?: IocRubric;
   why_dynamic_was_triggered: string;
   human_review_checklist: Array<{ item: string; required: boolean }>;
 };

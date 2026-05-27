@@ -50,6 +50,12 @@ export function reconcileScores(
         ...(staticBest?.evidence_refs ?? []),
         ...(dynamicBest?.evidence_refs ?? []),
       ],
+      static_reason: staticBest?.reason,
+      static_confidence: staticBest?.confidence,
+      static_scored_by: staticBest ? 'StaticFunnelWorker' : undefined,
+      dynamic_reason: dynamicBest?.reason,
+      dynamic_confidence: dynamicBest?.confidence,
+      dynamic_scored_by: dynamicBest ? 'ConsumerDynamicEvidenceAgent' : undefined,
     });
   }
   return Array.from(byIoc.values());

@@ -812,6 +812,8 @@ function buildDeepReport(
   mission: ReviewMissionPackage,
   evidence: DynamicEvidencePackage,
   lock: QueueLock,
+  metadataScorecard?: MetadataScorecard,
+  metadataGate?: MetadataGateDecision,
 ): DeepInspectionReport {
   const reconciled = reconcileScores(
     RISKWARE_RUBRIC,
@@ -847,10 +849,16 @@ function buildDeepReport(
     ...base,
     report_type: 'DeepInspectionReport',
     queue_lock: lock,
+    metadata_scorecard: metadataScorecard,
+    metadata_gate: metadataGate,
     install_verification: scorecard.install_verification,
+    slice_verification: makeSliceVerification(true),
     static_slice_summary: scorecard.static_slice,
     scorecard,
     gate_decision: gate,
+    evidence_package: evidence,
+    function_call_trace: mission.static_triage.execution_hypothesis.function_call_trace,
+    rubric: RISKWARE_RUBRIC,
     why_dynamic_was_triggered: gate.explanation,
     human_review_checklist: [
       { item: 'Confirm verdict candidate matches policy', required: true },
@@ -862,7 +870,18 @@ function buildDeepReport(
   };
 }
 
-const GRC_001_REPORT = buildDeepReport(GRC_001_SCORECARD, GRC_001_GATE, GRC_001_MISSION, GRC_001_EVIDENCE, GRC_001_LOCK);
+// Compute metadata layer for GRC-001 here so the deep report can carry it.
+const GRC_001_METADATA_SCORECARD_EARLY = makeMetadataScorecard(GRC_001_IDENTITY, GRC_001_MISSION.producer_metadata, 'grc001');
+const GRC_001_METADATA_GATE_EARLY = makeMetadataGateDecision(GRC_001_IDENTITY, GRC_001_METADATA_SCORECARD_EARLY, GRC_001_MISSION.producer_metadata);
+const GRC_001_REPORT = buildDeepReport(
+  GRC_001_SCORECARD,
+  GRC_001_GATE,
+  GRC_001_MISSION,
+  GRC_001_EVIDENCE,
+  GRC_001_LOCK,
+  GRC_001_METADATA_SCORECARD_EARLY,
+  GRC_001_METADATA_GATE_EARLY,
+);
 
 // =====================================================================
 // Compose queue cases at different pipeline stages
@@ -1351,8 +1370,8 @@ const EXPL_EVIDENCE: DynamicEvidencePackage = {
   checksum: 'sha256:explevidence_vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv',
 };
 
-const GRC_001_METADATA_SCORECARD = makeMetadataScorecard(GRC_001_IDENTITY, GRC_001_MISSION.producer_metadata, 'grc001');
-const GRC_001_METADATA_GATE = makeMetadataGateDecision(GRC_001_IDENTITY, GRC_001_METADATA_SCORECARD, GRC_001_MISSION.producer_metadata);
+const GRC_001_METADATA_SCORECARD = GRC_001_METADATA_SCORECARD_EARLY;
+const GRC_001_METADATA_GATE = GRC_001_METADATA_GATE_EARLY;
 const GRC_002_METADATA_SCORECARD = makeMetadataScorecard(GRC_002_IDENTITY, GRC_002_MISSION.producer_metadata, 'grc002');
 const GRC_002_METADATA_GATE = makeMetadataGateDecision(GRC_002_IDENTITY, GRC_002_METADATA_SCORECARD, GRC_002_MISSION.producer_metadata);
 const CLOSURE_METADATA = {

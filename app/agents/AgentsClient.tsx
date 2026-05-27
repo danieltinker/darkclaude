@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react';
 import type { AgentPrompt } from '@/lib/prompts';
 import type { Persona } from '@/lib/personas';
+import type { WorkerAnalytics } from '@/lib/types';
+import { AgentAnalytics } from '@/components/agents/AgentAnalytics';
 
 type AgentsClientProps = {
   prompts: AgentPrompt[];
   personas: Persona[];
+  analytics: WorkerAnalytics[];
 };
 
 const STORAGE_PREFIX = 'darkclaude_agent_prompt_';
@@ -18,7 +21,7 @@ const COLOR_MAP: Record<Persona['color'], { ring: string; text: string; bg: stri
   green: { ring: 'border-accent-green/60', text: 'text-accent-green', bg: 'bg-accent-green/10', border: 'border-accent-green/30' },
 };
 
-export function AgentsClient({ prompts, personas }: AgentsClientProps) {
+export function AgentsClient({ prompts, personas, analytics }: AgentsClientProps) {
   return (
     <div className="space-y-6">
       <div>
@@ -47,6 +50,18 @@ WorkerResult { task_id, status, output_type, output_path, confidence,
                errors, limitations }`}
           </pre>
         </div>
+      </div>
+
+      {/* Worker analytics */}
+      <div className="panel p-5">
+        <div className="flex items-baseline justify-between mb-3">
+          <div>
+            <div className="text-[10px] text-ink-muted tracking-widest mb-1">WORKER ANALYTICS</div>
+            <h2 className="text-sm font-semibold">Token usage, duration, and status per task</h2>
+          </div>
+          <span className="text-[10px] text-ink-muted">{analytics.length} runs recorded</span>
+        </div>
+        <AgentAnalytics rows={analytics} />
       </div>
 
       {/* Persona cards */}
