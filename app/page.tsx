@@ -1,29 +1,38 @@
 import Link from 'next/link';
-import { QUEUE_CASES, BRIDGE_EVENTS } from '@/lib/mock-data';
+import { QUEUE_CASES } from '@/lib/mock-data';
 import { RISKWARE_GATE_POLICY } from '@/lib/rubrics';
-import { Panel, KV } from '@/components/Panel';
-import { StatusBadge, PriorityBadge, VerdictBadge, GateBadge } from '@/components/StatusBadge';
+import { Panel } from '@/components/Panel';
+import { GateBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/StatusBadge';
 
 export default function Home() {
-  const total = QUEUE_CASES.length;
   const closedEarly = QUEUE_CASES.filter(c => c.producer_status === 'STATIC_INSUFFICIENT_CLOSED').length;
-  const dynamicActive = QUEUE_CASES.filter(c => c.consumer_status && c.consumer_status !== 'EVIDENCE_PACKAGE_SENT' && c.consumer_status !== 'DONE').length;
+  const dynamicActive = QUEUE_CASES.filter(
+    c => c.consumer_status && c.consumer_status !== 'EVIDENCE_PACKAGE_SENT' && c.consumer_status !== 'DONE',
+  ).length;
   const reportsReady = QUEUE_CASES.filter(c => c.report).length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       <Hero />
 
+      {/* Stats — visible at a glance */}
       <div className="grid grid-cols-4 gap-4">
-        <Stat label="cases in queue" value={total} accent="green" />
-        <Stat label="closed early at gate" value={closedEarly} accent="blue" />
-        <Stat label="dynamic active" value={dynamicActive} accent="amber" />
-        <Stat label="deep reports ready" value={reportsReady} accent="violet" />
+        <Stat label="cases in queue" value={QUEUE_CASES.length} accent="green" />
+        <Stat
+          label="closed at the gate"
+          value={closedEarly}
+          accent="blue"
+          hint="didn't need dynamic"
+        />
+        <Stat label="being investigated" value={dynamicActive} accent="amber" hint="consumer running" />
+        <Stat label="ready for human" value={reportsReady} accent="violet" hint="deep report drafted" />
       </div>
 
-      <PipelineFlow />
+      {/* HOW IT WORKS — the new plain-English story */}
+      <HowItWorks />
 
-      <Panel title="Active Cases" section="01" subtitle="every case carries a stable identity: review_id · package · version · category">
+      {/* Active cases */}
+      <Panel title="Active Cases" section="·" subtitle="click any row to open the case file">
         <div className="space-y-2">
           {QUEUE_CASES.map(c => (
             <Link
@@ -44,28 +53,22 @@ export default function Home() {
                 <div className="col-span-2">
                   <StatusBadge status={c.producer_status} side="producer" />
                 </div>
-                <div className="col-span-2">
+                <div className="col-span-3">
                   {c.gate_decision ? (
                     <GateBadge status={c.gate_decision.status} />
                   ) : (
                     <span className="text-[10px] text-ink-muted tracking-widest">— gate pending —</span>
                   )}
                 </div>
-                <div className="col-span-1">
-                  <StatusBadge status={c.consumer_status} side="consumer" />
-                </div>
                 <div className="col-span-1 text-xs text-ink-muted text-right">
-                  st <span className="text-ink-primary tabular-nums">{c.static_score}</span>
+                  score <span className="text-ink-primary tabular-nums">{c.final_score || c.static_score}</span>
                 </div>
-                <div className="col-span-1 text-xs text-ink-muted text-right">
-                  dyn <span className="text-ink-primary tabular-nums">{c.dynamic_score}</span>
-                </div>
-                <div className="col-span-1 text-right">
+                <div className="col-span-2 text-right">
                   {c.report ? (
                     <VerdictBadge verdict={c.report.verdict_candidate} />
                   ) : c.closure_report ? (
                     <span className="px-2 py-0.5 text-[10px] tracking-widest border border-ink-muted/40 rounded bg-bg-card text-ink-secondary">
-                      CLOSED
+                      CLOSED EARLY
                     </span>
                   ) : (
                     <span className="text-[10px] text-ink-muted">pending</span>
@@ -77,18 +80,31 @@ export default function Home() {
         </div>
       </Panel>
 
+      {/* SCORING — explained with concrete examples */}
+      <ScoringGuide />
+
+      {/* Gate policy + golden cases — keep but tighter */}
       <div className="grid grid-cols-2 gap-6">
-        <Panel title="Gate Policy" section="02" subtitle={`category: ${RISKWARE_GATE_POLICY.category_id}`}>
-          <div className="space-y-2">
-            <KV k="Dynamic analysis threshold" v={`score ≥ ${RISKWARE_GATE_POLICY.dynamic_analysis_threshold}`} />
-            <KV k="Auto-close below" v={`score < ${RISKWARE_GATE_POLICY.auto_close_below_score}`} />
-            <KV
-              k="Human-review gray band"
-              v={`${RISKWARE_GATE_POLICY.human_review_band.min} – ${RISKWARE_GATE_POLICY.human_review_band.max}`}
+        <Panel title="Gate Policy" section="·" subtitle="how the gate routes a case based on its score">
+          <div className="space-y-3 text-xs">
+            <PolicyRow
+              label="Investigate deeper"
+              cond={`score ≥ ${RISKWARE_GATE_POLICY.dynamic_analysis_threshold}`}
+              color="violet"
+            />
+            <PolicyRow
+              label="Send to human reviewer"
+              cond={`score ${RISKWARE_GATE_POLICY.human_review_band.min}–${RISKWARE_GATE_POLICY.human_review_band.max} (gray band)`}
+              color="amber"
+            />
+            <PolicyRow
+              label="Close early"
+              cond={`score < ${RISKWARE_GATE_POLICY.auto_close_below_score} and no override rule`}
+              color="muted"
             />
           </div>
-          <div className="mt-3">
-            <div className="label mb-2">force-dynamic rules (override low score)</div>
+          <div className="mt-4 pt-4 border-t divider">
+            <div className="text-[10px] text-ink-muted tracking-widest mb-2">override rules (escalate even at low score)</div>
             <div className="flex flex-wrap gap-1">
               {RISKWARE_GATE_POLICY.force_dynamic_if.map(r => (
                 <span
@@ -101,53 +117,41 @@ export default function Home() {
             </div>
           </div>
         </Panel>
-        <Panel title="Scoring Rubric" section="03" subtitle="weak = 2 · medium = 4 · strong = 8 · final = strongest per IOC">
-          <div className="space-y-2">
-            <KV k="Static score" v="Funnel candidate evidence" mono={false} />
-            <KV k="Dynamic score" v="Consumer validation evidence" mono={false} />
-            <KV k="Final score" v="max(static, dynamic) per IOC, summed" mono={false} />
-            <KV k="Never" v="Double-count the same IOC across artifacts" mono={false} />
-          </div>
-        </Panel>
-      </div>
 
-      <div className="grid grid-cols-2 gap-6">
-        <Panel title="Golden Cases" section="04" subtitle="canonical scenarios the pipeline must handle">
+        <Panel title="Golden Cases" section="·" subtitle="the scenarios the pipeline must handle">
           <div className="space-y-3">
             <div className="card p-3">
-              <div className="text-xs text-accent-green tracking-widest mb-1">GRC-001</div>
-              <div className="text-sm font-semibold mb-1">Riskware: C2 URL → WebView.loadUrl</div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-accent-green tracking-widest">GRC-001</span>
+                <VerdictBadge verdict="riskware" />
+              </div>
+              <div className="text-sm font-semibold mb-1">Server tells the app where to load</div>
               <div className="text-xs text-ink-secondary">
-                C2 endpoint returns a URL; app loads it in a hidden WebView. Strong evidence = network capture + hook log + screenshot.
+                A C2 endpoint returns a URL and the app loads it inside a hidden WebView. Proven dynamically with a network capture, hook log, and screenshot.
               </div>
             </div>
             <div className="card p-3">
-              <div className="text-xs text-accent-amber tracking-widest mb-1">GRC-002</div>
-              <div className="text-sm font-semibold mb-1">Riskware: Remote config flag enables hidden behavior</div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-accent-amber tracking-widest">GRC-002</span>
+                <span className="text-[10px] text-ink-muted">in progress</span>
+              </div>
+              <div className="text-sm font-semibold mb-1">Server flag enables hidden behavior</div>
               <div className="text-xs text-ink-secondary">
-                Server returns feature flag; app changes behavior. Strong evidence = config capture + behavior delta across geos.
+                The app changes behavior based on a remote feature flag. Proven by comparing behavior across geographies.
               </div>
             </div>
             <div className="card p-3">
-              <div className="text-xs text-ink-secondary tracking-widest mb-1">CLOSURE-CASE</div>
-              <div className="text-sm font-semibold mb-1">Closure: Lumen Notepad — funnel insufficient potential</div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-ink-secondary tracking-widest">CLOSURE</span>
+                <span className="text-[10px] text-ink-muted">closed at gate</span>
+              </div>
+              <div className="text-sm font-semibold mb-1">Not enough rubric to investigate</div>
               <div className="text-xs text-ink-secondary">
-                Static slice finds only weak WebView usage for bundled help. Gate closes early with explicit "insufficient static rubric potential" reason — not "benign".
+                A notepad app with only weak WebView usage for bundled help. Gate closes with{' '}
+                <em>"insufficient static rubric potential"</em> — never "benign".
               </div>
             </div>
           </div>
-        </Panel>
-
-        <Panel title="Architecture Spine" section="05" subtitle="funnel-first; agents are abstract">
-          <ol className="space-y-2 text-xs text-ink-secondary">
-            <li><span className="text-accent-green">01</span> Queue Lock — lease, dedupe, case identity creation</li>
-            <li><span className="text-accent-green">02</span> Install Verification — short-circuits on failure</li>
-            <li><span className="text-accent-green">03</span> Static Funnel — slice + scorecard + missing signals</li>
-            <li><span className="text-accent-green">04</span> Decision Gate — deterministic routing policy</li>
-            <li><span className="text-accent-green">05</span> Static Closure OR Dynamic Mission</li>
-            <li><span className="text-accent-green">06</span> Evidence Collector — budgeted experiments</li>
-            <li><span className="text-accent-green">07</span> Mission Control — reconcile + deep inspection report</li>
-          </ol>
         </Panel>
       </div>
     </div>
@@ -156,32 +160,193 @@ export default function Home() {
 
 function Hero() {
   return (
-    <div className="panel p-6 relative overflow-hidden">
+    <div className="panel p-8 relative overflow-hidden">
       <div className="absolute inset-0 opacity-[0.04] pointer-events-none">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-accent-green rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 left-32 w-48 h-48 bg-accent-violet rounded-full blur-[120px]" />
+        <div className="absolute top-0 right-0 w-72 h-72 bg-accent-green rounded-full blur-[140px]" />
+        <div className="absolute bottom-0 left-32 w-56 h-56 bg-accent-violet rounded-full blur-[140px]" />
       </div>
-      <div className="relative">
-        <div className="text-[10px] text-ink-muted tracking-[0.3em] mb-2">// SYSTEM OVERVIEW</div>
-        <h1 className="text-2xl font-semibold mb-3">
-          A funnel-first malware-review OS:{' '}
-          <span className="text-accent-blue">queue lock</span> →{' '}
-          <span className="text-accent-blue">static funnel</span> →{' '}
-          <span className="text-accent-amber">gate</span> →{' '}
-          <span className="text-accent-violet">dynamic evidence</span> →{' '}
-          <span className="text-accent-green">deep inspection report</span>.
+      <div className="relative max-w-3xl">
+        <div className="text-[10px] text-ink-muted tracking-[0.3em] mb-3">// WHAT IS DARKCLAUDE?</div>
+        <h1 className="text-3xl font-semibold mb-4 leading-tight">
+          A malware-review assembly line that decides which apps deserve deep investigation
+          — and writes the report when they do.
         </h1>
-        <p className="text-sm text-ink-secondary max-w-3xl">
-          The funnel decides whether an app deserves expensive deep analysis at all. A deterministic gate routes
-          insufficient cases to early closure (with an explicit reason — not "benign"), and only the cases with
-          real rubric potential consume Consumer time. All workers are abstract black boxes behind stable contracts.
+        <p className="text-sm text-ink-secondary leading-relaxed">
+          Most apps in the queue don't have enough suspicious signals to justify expensive runtime analysis.
+          A <span className="text-accent-blue">static funnel</span> reads each app fast, gives it a score,
+          and a deterministic <span className="text-accent-amber">gate</span> decides:
+          close the case now with a clear reason, or send it to a{' '}
+          <span className="text-accent-violet">dynamic lab</span> for runtime evidence. The final{' '}
+          <span className="text-accent-green">deep inspection report</span> goes to a human reviewer.
         </p>
       </div>
     </div>
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: number; accent: 'green' | 'amber' | 'blue' | 'violet' }) {
+function HowItWorks() {
+  const steps = [
+    {
+      n: '1',
+      title: 'Lock & identify',
+      sub: 'queue lock automation',
+      desc: 'Grabs one app off the queue, gives it a stable ID (app + version + category) so no two workers can fight over it.',
+      color: 'green',
+    },
+    {
+      n: '2',
+      title: 'Look & score',
+      sub: 'the triager',
+      desc: 'Installs the app, runs a quick static scan, and produces a scorecard against the rubric — including what was NOT found.',
+      color: 'blue',
+    },
+    {
+      n: '3',
+      title: 'Decide',
+      sub: 'the gatekeeper',
+      desc: 'Deterministic policy: if the score is high (or an override rule fires), investigate. If it\'s low, close the case with a clear reason. If it\'s in between, hand to a human.',
+      color: 'amber',
+    },
+    {
+      n: '4',
+      title: 'Investigate or close',
+      sub: 'the investigator + the reporter',
+      desc: 'When investigating: a runtime lab proves or refutes the hypothesis with screenshots, hooks, and network captures. Either way, the final report goes to a human.',
+      color: 'violet',
+    },
+  ];
+
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-4">
+        <h2 className="text-lg font-semibold">How it works</h2>
+        <span className="text-[10px] text-ink-muted tracking-widest">4 STEPS · LEFT TO RIGHT</span>
+      </div>
+      <div className="grid grid-cols-4 gap-3">
+        {steps.map((s, i) => (
+          <div key={s.n} className="relative">
+            <div className={`card p-4 h-full border ${COLOR_BORDER[s.color]}`}>
+              <div className="flex items-center gap-3 mb-3">
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-semibold border-2 ${COLOR_RING[s.color]}`}
+                >
+                  {s.n}
+                </div>
+                <div>
+                  <div className="text-sm font-semibold">{s.title}</div>
+                  <div className={`text-[10px] tracking-widest ${COLOR_TEXT[s.color]}`}>
+                    {s.sub.toUpperCase()}
+                  </div>
+                </div>
+              </div>
+              <p className="text-xs text-ink-secondary leading-relaxed">{s.desc}</p>
+            </div>
+            {i < steps.length - 1 && (
+              <div className="hidden lg:flex absolute -right-2 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-4 h-4 rounded-full bg-bg-base text-ink-muted text-xs">
+                →
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-ink-muted mt-4 leading-relaxed max-w-3xl">
+        Each step produces a <span className="text-ink-secondary">typed artifact</span>{' '}
+        (scorecard → gate decision → mission → evidence → report) that flows over an append-only file
+        protocol called <Link href="/bridge" className="text-accent-green hover:underline">PixelBridge</Link>.
+        Workers can be swapped (LLM, script, human) without changing the pipeline.
+      </p>
+    </section>
+  );
+}
+
+function ScoringGuide() {
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-4">
+        <h2 className="text-lg font-semibold">How scoring works</h2>
+        <span className="text-[10px] text-ink-muted tracking-widest">RUBRIC · RISKWARE V1</span>
+      </div>
+      <Panel title="" section="" subtitle="">
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <ScoreLevel
+            level="weak"
+            points={2}
+            color="muted"
+            example="Found a suspicious URL string in code, but no obvious flow to a WebView."
+          />
+          <ScoreLevel
+            level="medium"
+            points={4}
+            color="amber"
+            example="Code path shows a server response is passed to WebView.loadUrl — but we haven't run it."
+          />
+          <ScoreLevel
+            level="strong"
+            points={8}
+            color="red"
+            example="Runtime captured the server response AND WebView loaded it AND we have a screenshot."
+          />
+        </div>
+        <div className="pt-4 border-t divider grid grid-cols-3 gap-6">
+          <Rule
+            title="Static = suspicion"
+            body="The triager scores rubric items it can see in code. This is candidate evidence — not proof."
+          />
+          <Rule
+            title="Dynamic = proof"
+            body="The investigator scores only what it captured at runtime, and every score must point to an artifact."
+          />
+          <Rule
+            title="Final = strongest, not summed"
+            body="Each rubric item is scored once. We take the strongest level (static or dynamic) and add those up. Multiple evidence items for the same IOC don't stack."
+          />
+        </div>
+        <div className="mt-6 pt-4 border-t divider">
+          <div className="text-[10px] text-ink-muted tracking-widest mb-3">VERDICT THRESHOLDS</div>
+          <div className="grid grid-cols-4 gap-2 text-xs">
+            <VerdictRange label="benign" range="< 4" color="green" />
+            <VerdictRange label="inconclusive" range="4–11" color="blue" />
+            <VerdictRange label="riskware" range="12–23" color="amber" />
+            <VerdictRange label="malicious" range="≥ 24" color="red" />
+          </div>
+        </div>
+      </Panel>
+    </section>
+  );
+}
+
+// ─── small UI helpers ─────────────────────────────────────────────────
+
+const COLOR_BORDER: Record<string, string> = {
+  green: 'border-accent-green/40',
+  blue: 'border-accent-blue/40',
+  amber: 'border-accent-amber/40',
+  violet: 'border-accent-violet/40',
+};
+const COLOR_RING: Record<string, string> = {
+  green: 'border-accent-green/60 text-accent-green',
+  blue: 'border-accent-blue/60 text-accent-blue',
+  amber: 'border-accent-amber/60 text-accent-amber',
+  violet: 'border-accent-violet/60 text-accent-violet',
+};
+const COLOR_TEXT: Record<string, string> = {
+  green: 'text-accent-green',
+  blue: 'text-accent-blue',
+  amber: 'text-accent-amber',
+  violet: 'text-accent-violet',
+};
+
+function Stat({
+  label,
+  value,
+  accent,
+  hint,
+}: {
+  label: string;
+  value: number;
+  accent: 'green' | 'amber' | 'blue' | 'violet';
+  hint?: string;
+}) {
   const colorMap = {
     green: 'text-accent-green',
     amber: 'text-accent-amber',
@@ -190,160 +355,82 @@ function Stat({ label, value, accent }: { label: string; value: number; accent: 
   };
   return (
     <div className="card px-4 py-4">
-      <div className="label mb-2">{label}</div>
-      <div className={`text-3xl font-semibold tabular-nums ${colorMap[accent]}`}>{value}</div>
+      <div className="label">{label}</div>
+      <div className={`text-3xl font-semibold tabular-nums mt-2 ${colorMap[accent]}`}>{value}</div>
+      {hint && <div className="text-[10px] text-ink-muted mt-1">{hint}</div>}
     </div>
   );
 }
 
-function PipelineFlow() {
+function PolicyRow({ label, cond, color }: { label: string; cond: string; color: 'violet' | 'amber' | 'muted' }) {
+  const dotColor = {
+    violet: 'bg-accent-violet',
+    amber: 'bg-accent-amber',
+    muted: 'bg-ink-muted',
+  }[color];
   return (
-    <Panel title="Pipeline Flow" section="00" subtitle="funnel-first · gate routes to closure OR dynamic">
-      <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] gap-3 items-stretch mb-4">
-        <Stage
-          step="01"
-          title="QUEUE LOCK"
-          subtitle="Infrastructure"
-          items={['Lease + dedupe', 'CaseIdentity creation', 'Lock_expires_at safety']}
-          accent="green"
-        />
-        <FlowArrow label="locked case" />
-        <Stage
-          step="02"
-          title="STATIC FUNNEL"
-          subtitle="First analysis worker"
-          items={[
-            'Install verification',
-            'Static slice (structured)',
-            'Rubric potential score',
-            'Missing-signals report',
-          ]}
-          accent="blue"
-        />
-        <FlowArrow label="StaticFunnelScorecard" />
-        <Stage
-          step="03"
-          title="DECISION GATE"
-          subtitle="Deterministic policy"
-          items={[
-            'Threshold + gray band',
-            'Force-dynamic rules',
-            'Install-failure routing',
-            'Audit-grade explanation',
-          ]}
-          accent="amber"
-        />
+    <div className="flex items-start gap-3">
+      <div className={`w-1.5 h-1.5 rounded-full mt-1.5 ${dotColor}`} />
+      <div className="flex-1">
+        <div className="text-sm font-semibold">{label}</div>
+        <div className="text-[10px] text-ink-muted font-mono mt-0.5">{cond}</div>
       </div>
-
-      <div className="grid grid-cols-[1fr_auto_1fr] gap-3 items-stretch mb-4">
-        <Stage
-          step="04a"
-          title="CLOSE EARLY"
-          subtitle="Insufficient rubric potential"
-          items={[
-            'StaticClosureReport',
-            'Says "insufficient", not "benign"',
-            'Lists weak signals + missing strong signals',
-          ]}
-          accent="muted"
-        />
-        <div className="flex items-center justify-center text-[10px] text-ink-muted tracking-widest">OR</div>
-        <Stage
-          step="04b"
-          title="DYNAMIC MISSION"
-          subtitle="Only when gate routes here"
-          items={[
-            'Mission package built',
-            'Hypothesis + VPN matrix',
-            'Hooks + mocks + budget',
-            'Sent via PixelBridge',
-          ]}
-          accent="violet"
-        />
-      </div>
-
-      <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] gap-3 items-stretch">
-        <Stage
-          step="05"
-          title="PIXELBRIDGE"
-          subtitle="Append-only transport"
-          items={['Atomic .tmp → .json', 'Checksum + schema', 'ACK/NACK', 'Idempotent']}
-          accent="blue"
-        />
-        <FlowArrow label="DynamicEvidencePackage" reverse />
-        <Stage
-          step="06"
-          title="EVIDENCE COLLECTOR"
-          subtitle="Consumer runtime lab"
-          items={['Budgeted experiments', 'Hooks/network/screenshots', 'Dynamic IOC scoring']}
-          accent="amber"
-        />
-        <FlowArrow label="evidence → reconciliation" />
-        <Stage
-          step="07"
-          title="MISSION CONTROL"
-          subtitle="Deep Inspection Report"
-          items={[
-            'Reconcile static + dynamic',
-            'Human-review checklist',
-            'Reviewer-ready output',
-          ]}
-          accent="green"
-        />
-      </div>
-    </Panel>
+    </div>
   );
 }
 
-function Stage({
-  step,
-  title,
-  subtitle,
-  items,
-  accent,
+function ScoreLevel({
+  level,
+  points,
+  example,
+  color,
 }: {
-  step: string;
-  title: string;
-  subtitle: string;
-  items: string[];
-  accent: 'green' | 'blue' | 'violet' | 'amber' | 'muted';
+  level: 'weak' | 'medium' | 'strong';
+  points: number;
+  example: string;
+  color: 'muted' | 'amber' | 'red';
 }) {
   const colorMap = {
-    green: 'border-accent-green/40 text-accent-green',
-    blue: 'border-accent-blue/40 text-accent-blue',
-    violet: 'border-accent-violet/40 text-accent-violet',
-    amber: 'border-accent-amber/40 text-accent-amber',
-    muted: 'border-ink-muted/40 text-ink-secondary',
+    muted: 'text-ink-secondary border-ink-muted/40',
+    amber: 'text-accent-amber border-accent-amber/40',
+    red: 'text-accent-red border-accent-red/40',
   };
   return (
-    <div className={`card p-4 border ${colorMap[accent].split(' ')[0]}`}>
-      <div className="flex items-baseline gap-2 mb-1">
-        <span className="text-[10px] text-ink-muted tracking-widest">{step}</span>
-        <span className={`text-xs tracking-widest font-semibold ${colorMap[accent].split(' ')[1]}`}>{title}</span>
+    <div className={`card p-4 border ${colorMap[color].split(' ')[1]}`}>
+      <div className="flex items-baseline justify-between mb-2">
+        <span className={`text-xs tracking-widest font-semibold ${colorMap[color].split(' ')[0]}`}>
+          {level.toUpperCase()}
+        </span>
+        <span className="text-2xl font-semibold tabular-nums">+{points}</span>
       </div>
-      <div className="text-[11px] text-ink-secondary mb-3">{subtitle}</div>
-      <ul className="space-y-1.5 text-[11px] text-ink-secondary">
-        {items.map(i => (
-          <li key={i} className="flex gap-2">
-            <span className="text-ink-muted">▸</span>
-            <span>{i}</span>
-          </li>
-        ))}
-      </ul>
+      <p className="text-xs text-ink-secondary leading-relaxed">{example}</p>
     </div>
   );
 }
 
-function FlowArrow({ label, reverse }: { label: string; reverse?: boolean }) {
+function Rule({ title, body }: { title: string; body: string }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 px-2">
-      <div className="text-[9px] text-ink-muted tracking-widest text-center max-w-[100px] leading-tight">
-        {label}
+    <div>
+      <div className="text-sm font-semibold mb-1.5">{title}</div>
+      <p className="text-xs text-ink-secondary leading-relaxed">{body}</p>
+    </div>
+  );
+}
+
+function VerdictRange({ label, range, color }: { label: string; range: string; color: 'green' | 'blue' | 'amber' | 'red' }) {
+  const dotColor = {
+    green: 'bg-accent-green',
+    blue: 'bg-accent-blue',
+    amber: 'bg-accent-amber',
+    red: 'bg-accent-red',
+  }[color];
+  return (
+    <div className="card p-3 flex items-center gap-3">
+      <div className={`w-2 h-2 rounded-full ${dotColor}`} />
+      <div className="flex-1">
+        <div className="text-xs font-semibold">{label}</div>
       </div>
-      <div className="relative w-full h-px">
-        <div className="absolute inset-0 flow-line" />
-      </div>
-      <div className={`text-accent-green text-xs ${reverse ? 'rotate-180' : ''}`}>►</div>
+      <div className="text-xs text-ink-muted font-mono">{range}</div>
     </div>
   );
 }
