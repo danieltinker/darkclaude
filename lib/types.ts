@@ -159,10 +159,17 @@ export type DynamicEvidencePackage = {
   case_identity: CaseIdentity;
   execution_summary: {
     status: 'completed' | 'partial' | 'blocked' | 'failed';
-    runtime_verdict_candidate: 'malicious' | 'riskware' | 'benign' | 'inconclusive';
+    runtime_verdict_candidate:
+      | 'malicious'
+      | 'riskware'
+      | 'benign'
+      | 'inconclusive'
+      | 'false_positive'           // static suspicion not confirmed at runtime
+      | 'exploratory_finding';     // unanticipated IOC captured
     dynamic_score: number;
     confidence: number;
     summary: string;
+    exploratory_finding?: ExploratoryFinding;
   };
   budget_usage: {
     actual_total_minutes: number;
@@ -207,16 +214,18 @@ export type SubmissionReport = {
   created_at: string;
 };
 
-// Producer / Mission Control state machine — funnel-first
+// Producer / Mission Control state machine — funnel-first with two gates
 export type ProducerStatus =
   | 'QUEUE_AVAILABLE'
   | 'QUEUE_LOCKED'
   | 'CASE_CREATED'
+  | 'METADATA_SCORING'
+  | 'METADATA_INSUFFICIENT_CLOSED'   // closed at metadata gate — no static work needed
   | 'INSTALL_VERIFY_RUNNING'
   | 'INSTALL_VERIFY_FAILED'
   | 'STATIC_SLICE_RUNNING'
   | 'STATIC_SCORECARD_READY'
-  | 'STATIC_INSUFFICIENT_CLOSED'
+  | 'STATIC_INSUFFICIENT_CLOSED'     // closed at static gate
   | 'HUMAN_REVIEW_STATIC_GATE'
   | 'DYNAMIC_ANALYSIS_REQUIRED'
   | 'DYNAMIC_MISSION_READY'
@@ -227,6 +236,8 @@ export type ProducerStatus =
   | 'SCORES_RECONCILED'
   | 'DEEP_REPORT_READY'
   | 'HUMAN_REVIEW_READY'
+  | 'FALSE_POSITIVE_CLOSED'          // dynamic disproved static suspicion
+  | 'EXPLORATORY_FINDING_READY'      // dynamic found unanticipated IOC
   | 'SUBMITTED'
   | 'CLOSED';
 
@@ -242,6 +253,88 @@ export type ConsumerStatus =
   | 'EVIDENCE_PACKAGE_READY'
   | 'EVIDENCE_PACKAGE_SENT'
   | 'DONE';
+
+// =====================================================================
+// METADATA LAYER (runs BEFORE the static funnel)
+// Cheapest filter — uses data we already have, no install, no decompile.
+// =====================================================================
+
+export type MetadataSignals = {
+  developer_reputation: 'low' | 'medium' | 'high' | 'unknown';
+  developer_country_risk: 'low' | 'medium' | 'high';
+  account_age_days: number;
+  related_packages_count: number;
+  prior_flags_count: number;
+  target_markets_count: number;
+  monetization_signals_count: number;
+};
+
+export type MetadataScorecard = {
+  schema_version: '1.0.0';
+  event_type: 'MetadataScorecard';
+  message_id: string;
+  created_at: string;
+  source_agent: 'MetadataScoutWorker';
+  case_identity: CaseIdentity;
+  signals: MetadataSignals;
+  signal_score: number;
+  threshold_for_static_analysis: number;
+  requires_static_analysis: boolean;
+  reasoning: string[];
+  checksum: string;
+};
+
+export type MetadataGatePolicy = {
+  category_id: string;
+  signal_score_threshold: number;  // ≥ this → proceed to static
+  auto_close_below_score: number;  // < this → close at metadata gate
+  force_static_if: string[];       // rules that always escalate to static
+};
+
+export type MetadataGateStatus =
+  | 'PROCEED_TO_STATIC_FUNNEL'
+  | 'CLOSE_EARLY_METADATA_INSUFFICIENT'
+  | 'HUMAN_REVIEW_METADATA_GATE';
+
+export type MetadataGateDecision = {
+  case_identity: CaseIdentity;
+  policy_applied: MetadataGatePolicy;
+  signal_score: number;
+  triggered_force_rules: string[];
+  status: MetadataGateStatus;
+  next_step: 'PROCEED_TO_STATIC_FUNNEL' | 'GENERATE_METADATA_CLOSURE_REPORT' | 'ROUTE_TO_HUMAN_METADATA_GATE';
+  explanation: string;
+  decided_at: string;
+};
+
+export type MetadataClosureReport = {
+  report_id: string;
+  report_type: 'MetadataClosureReport';
+  case_identity: CaseIdentity;
+  scorecard: MetadataScorecard;
+  decision_reason: string;
+  limitations: string[];
+  final_status: string;
+  created_at: string;
+};
+
+// =====================================================================
+// EXPLORATORY FINDING — runtime captured an IOC the static phase
+// did NOT predict. Investigator has budget breathing room for this.
+// =====================================================================
+
+export type ExploratoryFinding = {
+  finding_id: string;
+  case_identity: CaseIdentity;
+  unanticipated_ioc_id: string;
+  unanticipated_ioc_name: string;
+  level: IocLevel;
+  confidence: number;
+  description: string;
+  evidence_artifacts: string[];
+  budget_breathing_room_used_minutes: number;
+  why_static_missed_it: string;
+};
 
 // =====================================================================
 // FUNNEL LAYER: queue lock → install → static slice → scorecard → gate
@@ -377,23 +470,32 @@ export type QueueCase = {
   final_score: number;
   metadata: ProducerMetadata;
   rubric: IocRubric;
-  // Funnel layer
+  // Queue lock
   queue_lock: QueueLock;
+  // Metadata gate (runs first, before any install)
+  metadata_scorecard?: MetadataScorecard;
+  metadata_gate?: MetadataGateDecision;
+  metadata_closure_report?: MetadataClosureReport;
+  // Static funnel (only present if metadata gate routed to static)
   install_verification?: InstallVerification;
   static_slice_summary?: StaticSliceSummary;
   scorecard?: StaticFunnelScorecard;
   gate_decision?: GateDecision;
   closure_report?: StaticClosureReport;
-  // Deep analysis (only present if gate routed to dynamic)
+  // Deep analysis (only present if static gate routed to dynamic)
   static_triage: StaticTriage;
   mission_package?: ReviewMissionPackage;
   evidence_package?: DynamicEvidencePackage;
+  exploratory_finding?: ExploratoryFinding;
   report?: DeepInspectionReport;
 };
 
 // PixelBridge append-only event log
 export type BridgeEventType =
   | 'QueueLockClaimed'
+  | 'MetadataScorecard'
+  | 'MetadataGateDecision'
+  | 'MetadataClosureReport'
   | 'InstallVerification'
   | 'StaticFunnelScorecard'
   | 'GateDecision'
@@ -403,6 +505,7 @@ export type BridgeEventType =
   | 'MissionRejected'
   | 'ConsumerProgressUpdate'
   | 'DynamicEvidencePackage'
+  | 'ExploratoryFinding'
   | 'DeepInspectionReportDraft';
 
 export type BridgeEvent = {
@@ -410,8 +513,8 @@ export type BridgeEvent = {
   message_id: string;
   event_type: BridgeEventType;
   case_key: string;
-  source: 'queue' | 'mission_control' | 'static_funnel' | 'producer' | 'consumer';
-  target: 'queue' | 'mission_control' | 'static_funnel' | 'producer' | 'consumer';
+  source: 'queue' | 'metadata_scout' | 'mission_control' | 'static_funnel' | 'producer' | 'consumer';
+  target: 'queue' | 'metadata_scout' | 'mission_control' | 'static_funnel' | 'producer' | 'consumer';
   status: 'pending' | 'transferred' | 'processed' | 'error';
   created_at: string;
   checksum: string;

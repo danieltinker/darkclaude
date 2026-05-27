@@ -13,6 +13,24 @@ export type Persona = {
 
 export const PERSONAS: Persona[] = [
   {
+    agent_id: 'producer.metadata_scout',
+    monogram: 'SC',
+    name: 'The Scout',
+    one_liner: 'First filter. Reads metadata you already have and decides if the app needs any deeper analysis at all.',
+    what_i_do: [
+      'Score the app from publisher reputation, account age, prior flags, target markets, and monetization signals',
+      'Recommend "proceed to static" or "close — not worth deeper analysis"',
+      'Flag known-bad publishers and force-escalate even at low score',
+      'Run before the app is ever installed — costs almost nothing',
+    ],
+    what_i_cant_do: [
+      'Decompile or run the app',
+      'Look at code',
+      'Make the final close/escalate decision (the gate does)',
+    ],
+    color: 'green',
+  },
+  {
     agent_id: 'producer.static_funnel',
     monogram: 'TR',
     name: 'The Triager',
@@ -70,16 +88,19 @@ export const PERSONAS: Persona[] = [
     agent_id: 'consumer.dynamic_evidence',
     monogram: 'IN',
     name: 'The Investigator',
-    one_liner: 'Runs the mission inside an isolated lab and captures evidence — or honestly reports there isn\'t any.',
+    one_liner: 'Runs the mission and captures evidence. Can come back with malicious, false-positive, or an unanticipated finding.',
     what_i_do: [
       'Run the app in baseline and recommended geographies',
       'Capture screenshots, hook logs, and network traffic',
       'Score every IOC against the artifacts I collected',
+      'Use breathing room to chase unanticipated IOCs — within the budget',
       'Stop early when strong evidence is reached',
+      'Return one of three honest outcomes: malicious, false positive, or exploratory finding',
     ],
     what_i_cant_do: [
       'Score an IOC without an artifact to back it up',
       'Continue past the mission budget',
+      'Claim a finding I did not actually observe',
       'Make the final submission decision',
     ],
     color: 'green',

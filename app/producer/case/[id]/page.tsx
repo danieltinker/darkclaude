@@ -4,6 +4,7 @@ import { getCaseByReviewId, getCaseKey } from '@/lib/mock-data';
 import { Panel, KV } from '@/components/Panel';
 import { GateBadge, IocLevelBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/StatusBadge';
 import { ScoreBar } from '@/components/ScoreBar';
+import { ArtifactJsonViewer } from '@/components/ArtifactJsonViewer';
 
 export default async function CaseDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -289,6 +290,105 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
               </div>
             </Panel>
           )}
+
+          <Panel
+            title="Pipeline Artifacts"
+            section="·"
+            subtitle="every typed artifact produced during this case — click any row to see its full structure"
+          >
+            <div className="space-y-2">
+              <ArtifactJsonViewer
+                artifactType="QueueLock"
+                description="lease created by the queue automation"
+                payload={c.queue_lock}
+              />
+              {c.metadata_scorecard && (
+                <ArtifactJsonViewer
+                  artifactType="MetadataScorecard"
+                  description="The Scout's metadata-only score"
+                  payload={c.metadata_scorecard}
+                />
+              )}
+              {c.metadata_gate && (
+                <ArtifactJsonViewer
+                  artifactType="MetadataGateDecision"
+                  description="deterministic metadata-gate routing"
+                  payload={c.metadata_gate}
+                />
+              )}
+              {c.metadata_closure_report && (
+                <ArtifactJsonViewer
+                  artifactType="MetadataClosureReport"
+                  description="terminal — closed at metadata gate"
+                  payload={c.metadata_closure_report}
+                />
+              )}
+              {c.install_verification && (
+                <ArtifactJsonViewer
+                  artifactType="InstallVerification"
+                  description="The Triager's install check"
+                  payload={c.install_verification}
+                />
+              )}
+              {c.static_slice_summary && (
+                <ArtifactJsonViewer
+                  artifactType="StaticSliceSummary"
+                  description="structured fast static-slice output"
+                  payload={c.static_slice_summary}
+                />
+              )}
+              {c.scorecard && (
+                <ArtifactJsonViewer
+                  artifactType="StaticFunnelScorecard"
+                  description="rubric scoring with candidate IOCs and missing strong signals"
+                  payload={c.scorecard}
+                />
+              )}
+              {c.gate_decision && (
+                <ArtifactJsonViewer
+                  artifactType="GateDecision"
+                  description="static-gate routing"
+                  payload={c.gate_decision}
+                />
+              )}
+              {c.closure_report && (
+                <ArtifactJsonViewer
+                  artifactType="StaticClosureReport"
+                  description="terminal — closed at static gate"
+                  payload={c.closure_report}
+                />
+              )}
+              {c.mission_package && (
+                <ArtifactJsonViewer
+                  artifactType="ReviewMissionPackage"
+                  description="THE mission package sent to Consumer through PixelBridge"
+                  payload={c.mission_package}
+                  defaultExpanded
+                />
+              )}
+              {c.evidence_package && (
+                <ArtifactJsonViewer
+                  artifactType="DynamicEvidencePackage"
+                  description="Consumer's runtime evidence return"
+                  payload={c.evidence_package}
+                />
+              )}
+              {c.exploratory_finding && (
+                <ArtifactJsonViewer
+                  artifactType="ExploratoryFinding"
+                  description="unanticipated IOC captured under budget breathing room"
+                  payload={c.exploratory_finding}
+                />
+              )}
+              {c.report && (
+                <ArtifactJsonViewer
+                  artifactType="DeepInspectionReport"
+                  description="reviewer-ready output"
+                  payload={c.report}
+                />
+              )}
+            </div>
+          </Panel>
 
           {/* Hooks/URLs/mission only relevant if gate routed to dynamic */}
           {c.mission_package && c.static_triage.top_ioc_candidates.length > 0 && (

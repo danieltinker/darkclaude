@@ -136,15 +136,7 @@ export function RunnerClient() {
                 {scenario.final_link_label} →
               </div>
             </div>
-            <span
-              className={`px-3 py-1.5 text-xs tracking-widest border rounded ${
-                scenario.outcome === 'closure'
-                  ? 'border-ink-muted/40 bg-bg-card text-ink-secondary'
-                  : 'border-accent-red/40 bg-accent-red/10 text-accent-red'
-              }`}
-            >
-              {scenario.outcome === 'closure' ? 'CLOSED EARLY' : 'MALICIOUS · AWAITING HUMAN REVIEW'}
-            </span>
+            <OutcomeBadge tone={scenario.outcome_tone} label={scenario.outcome_label} />
           </div>
         </Link>
       )}
@@ -397,6 +389,8 @@ function GateDeciding() {
 }
 
 function ArtifactCard({ artifact, highlight }: { artifact: SimArtifact; highlight: boolean }) {
+  const [showJson, setShowJson] = useState(false);
+  const jsonString = JSON.stringify(artifact.full_payload, null, 2);
   return (
     <div
       className={`mt-3 border rounded p-3 ${
@@ -416,6 +410,34 @@ function ArtifactCard({ artifact, highlight }: { artifact: SimArtifact; highligh
           </div>
         ))}
       </div>
+      <div className="mt-3 pt-2 border-t border-ink-muted/20 flex items-center justify-between">
+        <button
+          onClick={() => setShowJson(!showJson)}
+          className="text-[10px] tracking-widest text-ink-muted hover:text-accent-green"
+        >
+          {showJson ? '▴ HIDE FULL STRUCTURE' : '▾ VIEW FULL STRUCTURE'}
+        </button>
+        <span className="text-[10px] text-ink-muted">{jsonString.length.toLocaleString()} chars</span>
+      </div>
+      {showJson && (
+        <pre className="mt-3 bg-bg-base border border-ink-muted/20 rounded p-3 text-[10px] text-ink-secondary leading-relaxed max-h-[400px] overflow-auto font-mono">
+{jsonString}
+        </pre>
+      )}
     </div>
+  );
+}
+
+function OutcomeBadge({ tone, label }: { tone: 'muted' | 'red' | 'blue' | 'violet'; label: string }) {
+  const cls = {
+    muted: 'border-ink-muted/40 bg-bg-card text-ink-secondary',
+    red: 'border-accent-red/40 bg-accent-red/10 text-accent-red',
+    blue: 'border-accent-blue/40 bg-accent-blue/10 text-accent-blue',
+    violet: 'border-accent-violet/40 bg-accent-violet/10 text-accent-violet',
+  }[tone];
+  return (
+    <span className={`px-3 py-1.5 text-xs tracking-widest border rounded ${cls}`}>
+      {label}
+    </span>
   );
 }

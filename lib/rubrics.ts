@@ -1,4 +1,20 @@
-import { GatePolicy, IocRubric } from './types';
+import { GatePolicy, IocRubric, MetadataGatePolicy } from './types';
+
+// Metadata-gate policy — the FIRST filter. Runs on data we already have
+// (publisher, account age, prior flags, target markets, monetization
+// signals). Apps that score below threshold close here with no install
+// or decompile cost.
+export const RISKWARE_METADATA_GATE_POLICY: MetadataGatePolicy = {
+  category_id: 'riskware',
+  signal_score_threshold: 2,   // ≥ 2 → proceed to static funnel
+  auto_close_below_score: 2,   // < 2 → close at metadata gate
+  force_static_if: [
+    'developer_prior_flags_present',
+    'known_bad_developer',
+    'known_bad_package_pattern',
+    'high_country_risk_with_monetization',
+  ],
+};
 
 // Decision-gate policy for the riskware category.
 // The gate is deterministic — Static Funnel proposes, gate disposes.

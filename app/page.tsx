@@ -64,15 +64,7 @@ export default function Home() {
                   score <span className="text-ink-primary tabular-nums">{c.final_score || c.static_score}</span>
                 </div>
                 <div className="col-span-2 text-right">
-                  {c.report ? (
-                    <VerdictBadge verdict={c.report.verdict_candidate} />
-                  ) : c.closure_report ? (
-                    <span className="px-2 py-0.5 text-[10px] tracking-widest border border-ink-muted/40 rounded bg-bg-card text-ink-secondary">
-                      CLOSED EARLY
-                    </span>
-                  ) : (
-                    <span className="text-[10px] text-ink-muted">pending</span>
-                  )}
+                  {renderOutcomeBadge(c)}
                 </div>
               </div>
             </Link>
@@ -158,6 +150,23 @@ export default function Home() {
   );
 }
 
+function renderOutcomeBadge(c: typeof QUEUE_CASES[number]) {
+  if (c.report) return <VerdictBadge verdict={c.report.verdict_candidate} />;
+  if (c.producer_status === 'METADATA_INSUFFICIENT_CLOSED') {
+    return <span className="px-2 py-0.5 text-[10px] tracking-widest border border-ink-muted/40 rounded bg-bg-card text-ink-secondary">METADATA CLOSED</span>;
+  }
+  if (c.producer_status === 'STATIC_INSUFFICIENT_CLOSED') {
+    return <span className="px-2 py-0.5 text-[10px] tracking-widest border border-ink-muted/40 rounded bg-bg-card text-ink-secondary">STATIC CLOSED</span>;
+  }
+  if (c.producer_status === 'FALSE_POSITIVE_CLOSED') {
+    return <span className="px-2 py-0.5 text-[10px] tracking-widest border border-accent-blue/40 rounded bg-accent-blue/10 text-accent-blue">FALSE POSITIVE</span>;
+  }
+  if (c.producer_status === 'EXPLORATORY_FINDING_READY') {
+    return <span className="px-2 py-0.5 text-[10px] tracking-widest border border-accent-violet/40 rounded bg-accent-violet/10 text-accent-violet">EXPLORATORY</span>;
+  }
+  return <span className="text-[10px] text-ink-muted">pending</span>;
+}
+
 function Hero() {
   return (
     <div className="panel p-8 relative overflow-hidden">
@@ -194,30 +203,30 @@ function HowItWorks() {
   const steps = [
     {
       n: '1',
-      title: 'Lock & identify',
-      sub: 'queue lock automation',
-      desc: 'Grabs one app off the queue, gives it a stable ID (app + version + category) so no two workers can fight over it.',
+      title: 'Lock & score metadata',
+      sub: 'queue lock · the scout',
+      desc: 'Grabs one app off the queue and immediately scores it from metadata alone (publisher, account age, prior flags). No install yet — this is the cheapest filter.',
       color: 'green',
     },
     {
       n: '2',
-      title: 'Look & score',
+      title: 'Look & score code',
       sub: 'the triager',
-      desc: 'Installs the app, runs a quick static scan, and produces a scorecard against the rubric — including what was NOT found.',
+      desc: 'If metadata score is above threshold, install the app, run a fast static slice, and score it against the rubric — including what was NOT found.',
       color: 'blue',
     },
     {
       n: '3',
       title: 'Decide',
       sub: 'the gatekeeper',
-      desc: 'Deterministic policy: if the score is high (or an override rule fires), investigate. If it\'s low, close the case with a clear reason. If it\'s in between, hand to a human.',
+      desc: 'Two gates in sequence (metadata, then static). Each is deterministic: high score or force-rule → investigate; low score → close with a clear reason; in between → human.',
       color: 'amber',
     },
     {
       n: '4',
       title: 'Investigate or close',
       sub: 'the investigator + the reporter',
-      desc: 'When investigating: a runtime lab proves or refutes the hypothesis with screenshots, hooks, and network captures. Either way, the final report goes to a human.',
+      desc: 'Dynamic returns one of three honest outcomes: malicious, false positive, or exploratory finding (when runtime surprises us with an unanticipated IOC).',
       color: 'violet',
     },
   ];

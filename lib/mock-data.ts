@@ -2,8 +2,14 @@ import {
   BridgeEvent,
   DeepInspectionReport,
   DynamicEvidencePackage,
+  ExploratoryFinding,
   GateDecision,
   InstallVerification,
+  MetadataClosureReport,
+  MetadataGateDecision,
+  MetadataScorecard,
+  MetadataSignals,
+  ProducerMetadata,
   QueueCase,
   QueueLock,
   ReviewMissionPackage,
@@ -12,7 +18,7 @@ import {
   StaticSliceSummary,
   SubmissionReport,
 } from './types';
-import { RISKWARE_GATE_POLICY, RISKWARE_RUBRIC } from './rubrics';
+import { RISKWARE_GATE_POLICY, RISKWARE_METADATA_GATE_POLICY, RISKWARE_RUBRIC } from './rubrics';
 import { reconcileScores, sumIocPoints, verdictFromScore } from './scoring';
 
 // =====================================================================
@@ -33,6 +39,129 @@ function makeLock(app_review_id: string, queue_item_id: string, worker = 'static
     locked_at: '2026-05-27T08:00:00Z',
     lock_expires_at: '2026-05-27T08:30:00Z',
     status: 'QUEUE_LOCKED',
+  };
+}
+
+// =====================================================================
+// Metadata scoring — same math the Scout would apply
+// =====================================================================
+
+function inferCountryRisk(country: string): 'low' | 'medium' | 'high' {
+  const high = ['VG', 'KY', 'BZ', 'PA'];   // common shell-company jurisdictions
+  const medium = ['CN', 'RU', 'TR'];        // mixed signal countries (in this mock)
+  if (high.includes(country)) return 'high';
+  if (medium.includes(country)) return 'medium';
+  if (country === 'Unknown') return 'medium';
+  return 'low';
+}
+
+function buildSignals(meta: ProducerMetadata): MetadataSignals {
+  return {
+    developer_reputation: meta.developer_reputation,
+    developer_country_risk: inferCountryRisk(meta.developer_country),
+    account_age_days: meta.developer_account_age_days,
+    related_packages_count: meta.related_packages.length,
+    prior_flags_count: meta.prior_flags.length,
+    target_markets_count: meta.target_markets.length,
+    monetization_signals_count: meta.monetization_signals.length,
+  };
+}
+
+function scoreMetadata(s: MetadataSignals): { score: number; reasoning: string[] } {
+  const reasoning: string[] = [];
+  let score = 0;
+
+  // developer_reputation
+  const repPoints = { high: 0, medium: 1, low: 3, unknown: 2 }[s.developer_reputation];
+  if (repPoints) reasoning.push(`developer_reputation=${s.developer_reputation} → +${repPoints}`);
+  score += repPoints;
+
+  // country
+  const countryPoints = { low: 0, medium: 2, high: 3 }[s.developer_country_risk];
+  if (countryPoints) reasoning.push(`country_risk=${s.developer_country_risk} → +${countryPoints}`);
+  score += countryPoints;
+
+  // account age
+  let agePoints = 0;
+  if (s.account_age_days < 90) agePoints = 3;
+  else if (s.account_age_days < 365) agePoints = 1;
+  if (agePoints) reasoning.push(`account_age=${s.account_age_days}d → +${agePoints}`);
+  score += agePoints;
+
+  // related packages
+  let relPoints = 0;
+  if (s.related_packages_count >= 3) relPoints = 2;
+  else if (s.related_packages_count >= 1) relPoints = 1;
+  if (relPoints) reasoning.push(`related_packages=${s.related_packages_count} → +${relPoints}`);
+  score += relPoints;
+
+  // prior flags
+  let flagPoints = 0;
+  if (s.prior_flags_count >= 2) flagPoints = 5;
+  else if (s.prior_flags_count === 1) flagPoints = 2;
+  if (flagPoints) reasoning.push(`prior_flags=${s.prior_flags_count} → +${flagPoints}`);
+  score += flagPoints;
+
+  // target markets
+  let marketPoints = 0;
+  if (s.target_markets_count >= 3) marketPoints = 2;
+  else if (s.target_markets_count >= 1) marketPoints = 1;
+  if (marketPoints) reasoning.push(`target_markets=${s.target_markets_count} → +${marketPoints}`);
+  score += marketPoints;
+
+  // monetization
+  let monPoints = 0;
+  if (s.monetization_signals_count >= 3) monPoints = 2;
+  else if (s.monetization_signals_count >= 1) monPoints = 1;
+  if (monPoints) reasoning.push(`monetization=${s.monetization_signals_count} → +${monPoints}`);
+  score += monPoints;
+
+  if (score === 0) reasoning.push('all signals clean — no points');
+  return { score, reasoning };
+}
+
+function makeMetadataScorecard(
+  case_identity: QueueCase['case_identity'],
+  meta: ProducerMetadata,
+  caseSeed: string,
+): MetadataScorecard {
+  const signals = buildSignals(meta);
+  const { score, reasoning } = scoreMetadata(signals);
+  return {
+    schema_version: '1.0.0',
+    event_type: 'MetadataScorecard',
+    message_id: `msg_${caseSeed}_metadata_01`,
+    created_at: '2026-05-27T07:55:00Z',
+    source_agent: 'MetadataScoutWorker',
+    case_identity,
+    signals,
+    signal_score: score,
+    threshold_for_static_analysis: RISKWARE_METADATA_GATE_POLICY.signal_score_threshold,
+    requires_static_analysis: score >= RISKWARE_METADATA_GATE_POLICY.signal_score_threshold,
+    reasoning,
+    checksum: `sha256:meta_${caseSeed}_${score}aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`,
+  };
+}
+
+function makeMetadataGateDecision(
+  case_identity: QueueCase['case_identity'],
+  sc: MetadataScorecard,
+  meta: ProducerMetadata,
+): MetadataGateDecision {
+  const triggered: string[] = [];
+  if (meta.prior_flags.length > 0) triggered.push('developer_prior_flags_present');
+  const proceed = sc.requires_static_analysis || triggered.length > 0;
+  return {
+    case_identity,
+    policy_applied: RISKWARE_METADATA_GATE_POLICY,
+    signal_score: sc.signal_score,
+    triggered_force_rules: triggered,
+    status: proceed ? 'PROCEED_TO_STATIC_FUNNEL' : 'CLOSE_EARLY_METADATA_INSUFFICIENT',
+    next_step: proceed ? 'PROCEED_TO_STATIC_FUNNEL' : 'GENERATE_METADATA_CLOSURE_REPORT',
+    explanation: proceed
+      ? `signal_score (${sc.signal_score}) ≥ threshold (${RISKWARE_METADATA_GATE_POLICY.signal_score_threshold})${triggered.length ? ` AND force-rules fired: ${triggered.join(', ')}` : ''}.`
+      : `signal_score (${sc.signal_score}) < threshold (${RISKWARE_METADATA_GATE_POLICY.signal_score_threshold}) and no force-rule. Close at metadata gate — not worth installing.`,
+    decided_at: '2026-05-27T07:56:00Z',
   };
 }
 
@@ -696,8 +825,498 @@ const EMPTY_STATIC_TRIAGE = {
   suggested_hooks: [],
 };
 
+// =====================================================================
+// METADATA-GATE CLOSURE CASE — closes BEFORE the static funnel
+// =====================================================================
+
+const META_CLOSURE_IDENTITY = {
+  app_review_id: 'review_2026_000301',
+  queue_item_id: 'qitem_006',
+  package_name: 'com.cleartools.calendar',
+  app_name: 'ClearNote Calendar',
+  version_name: '6.4.0',
+  version_code: 640,
+  category_id: 'riskware',
+  category_name: 'Riskware',
+};
+
+const META_CLOSURE_META: ProducerMetadata = {
+  developer_country: 'DE',
+  developer_reputation: 'high',
+  developer_account_age_days: 1500,
+  related_packages: [],
+  prior_flags: [],
+  target_markets: [],
+  monetization_signals: [],
+};
+
+const META_CLOSURE_SCORECARD = makeMetadataScorecard(META_CLOSURE_IDENTITY, META_CLOSURE_META, 'meta_clo');
+const META_CLOSURE_GATE = makeMetadataGateDecision(META_CLOSURE_IDENTITY, META_CLOSURE_SCORECARD, META_CLOSURE_META);
+const META_CLOSURE_REPORT: MetadataClosureReport = {
+  report_id: `meta_closure_${META_CLOSURE_IDENTITY.app_review_id}`,
+  report_type: 'MetadataClosureReport',
+  case_identity: META_CLOSURE_IDENTITY,
+  scorecard: META_CLOSURE_SCORECARD,
+  decision_reason: META_CLOSURE_GATE.explanation,
+  limitations: [
+    'Closure reflects clean metadata only — not a runtime guarantee.',
+    'If the developer ships a future version with new signals, the case re-enters the queue.',
+  ],
+  final_status: 'Closed at metadata gate: high-reputation publisher with no suspicious metadata signals.',
+  created_at: '2026-05-27T07:57:00Z',
+};
+
+// =====================================================================
+// FALSE POSITIVE CASE — static suspected riskware, dynamic disproved
+// =====================================================================
+
+const FP_IDENTITY = {
+  app_review_id: 'review_2026_000312',
+  queue_item_id: 'qitem_007',
+  package_name: 'com.mirasound.player',
+  app_name: 'Mira Music Player',
+  version_name: '2.1.0',
+  version_code: 210,
+  category_id: 'riskware',
+  category_name: 'Riskware',
+};
+
+const FP_META: ProducerMetadata = {
+  developer_country: 'US',
+  developer_reputation: 'medium',
+  developer_account_age_days: 380,
+  related_packages: ['com.mirasound.radio'],
+  prior_flags: [],
+  target_markets: ['US', 'GB'],
+  monetization_signals: ['music-streaming-sdk'],
+};
+
+const FP_METADATA_SCORECARD = makeMetadataScorecard(FP_IDENTITY, FP_META, 'fp');
+const FP_METADATA_GATE = makeMetadataGateDecision(FP_IDENTITY, FP_METADATA_SCORECARD, FP_META);
+
+const FP_INSTALL = makeInstallVerification(true);
+
+const FP_SLICE: StaticSliceSummary = {
+  status: 'completed',
+  decompile_status: 'success',
+  manifest_parsed: true,
+  native_files_detected: false,
+  network_strings_detected: true,
+  webview_usage_detected: true,
+  candidate_flows: [
+    {
+      flow_id: 'flow_fp_webview_001',
+      summary: 'WebView found alongside network code — flow not conclusively traced statically.',
+      source: 'PlayerActivity.onCreate',
+      sink: 'TutorialWebView.loadUrl',
+      confidence: 0.51,
+    },
+  ],
+};
+
+const FP_SCORECARD: StaticFunnelScorecard = {
+  schema_version: '1.0.0',
+  event_type: 'StaticFunnelScorecard',
+  message_id: 'msg_fp_scorecard_01',
+  created_at: '2026-05-27T08:30:00Z',
+  source_agent: 'StaticFunnelWorker',
+  case_identity: FP_IDENTITY,
+  install_verification: FP_INSTALL,
+  static_slice: FP_SLICE,
+  rubric_potential: {
+    candidate_score: 6,
+    threshold_for_dynamic_analysis: 8,
+    requires_dynamic_analysis: false,
+    reason: 'WebView present and network code present, but flow from network to WebView is ambiguous. Force-rule "remote_controlled_webview_candidate" still applies — escalate to confirm.',
+  },
+  candidate_iocs: [
+    { ioc_id: 'rw_remote_controlled_webview', level: 'medium', confidence: 0.51, reason: 'Static flow to WebView unclear — could be bundled tutorials or remote.' },
+    { ioc_id: 'rw_c2_endpoint', level: 'weak', confidence: 0.42, reason: 'Network code present — could be telemetry or content fetch.' },
+  ],
+  missing_rubric_signals: [
+    { ioc_id: 'rw_remote_config_flag', ioc_name: 'Remote config flag', reason: 'No remote config pattern detected.' },
+  ],
+  checksum: 'sha256:5c0recardfpqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq',
+};
+
+const FP_GATE: GateDecision = {
+  case_identity: FP_IDENTITY,
+  policy_applied: RISKWARE_GATE_POLICY,
+  candidate_score: 6,
+  triggered_force_rules: ['remote_controlled_webview_candidate'],
+  status: 'DYNAMIC_ANALYSIS_REQUIRED',
+  next_step: 'BUILD_DYNAMIC_MISSION_PACKAGE',
+  explanation:
+    'Score (6) in gray band, but force-rule "remote_controlled_webview_candidate" fired. Escalate to dynamic to confirm the WebView flow.',
+  decided_at: '2026-05-27T08:31:00Z',
+};
+
+const FP_MISSION: ReviewMissionPackage = {
+  schema_version: '1.0.0',
+  event_type: 'ReviewMissionPackage',
+  message_id: 'msg_fp_mission_01',
+  created_at: '2026-05-27T08:35:00Z',
+  source_agent: 'ProducerStaticTriageAgent',
+  target_agent: 'ConsumerDynamicEvidenceAgent',
+  case_identity: FP_IDENTITY,
+  rubric_reference: {
+    rubric_id: RISKWARE_RUBRIC.rubric_id,
+    rubric_version: RISKWARE_RUBRIC.rubric_version,
+    rubric_hash: RISKWARE_RUBRIC.rubric_hash,
+  },
+  producer_metadata: FP_META,
+  static_triage: {
+    candidate_score: 6,
+    top_ioc_candidates: FP_SCORECARD.candidate_iocs,
+    execution_hypothesis: {
+      summary: 'WebView usage may or may not load remote URL — needs runtime confirmation.',
+      suspected_flow: ['App launch', 'TutorialWebView.loadUrl (target unknown statically)'],
+      function_call_trace: [],
+    },
+    suspicious_urls: [],
+    suspicious_native_files: [],
+    suggested_hooks: [
+      { target: 'android.webkit.WebView.loadUrl', goal: 'Capture WebView destination' },
+    ],
+  },
+  hypotheses: [
+    {
+      hypothesis_id: 'hyp_fp_webview',
+      title: 'WebView may load remote content',
+      related_iocs: ['rw_remote_controlled_webview', 'rw_c2_endpoint'],
+      static_basis: ['WebView and network code coexist in the app'],
+      validation_steps: ['Run app and capture WebView.loadUrl destinations'],
+      strong_evidence_definition: ['WebView observed loading a remote URL controlled by server response'],
+      stop_condition: 'Stop once flow is confirmed or disproved',
+    },
+  ],
+  geo_execution_plan: {
+    baseline_country: { country: 'US', role: 'baseline', priority: 1, reason: 'Target market' },
+    recommended_vpn_countries: [],
+  },
+  consumer_budget: {
+    max_total_minutes: 30,
+    max_iterations: 4,
+    max_vpn_countries: 1,
+    max_hook_revisions: 2,
+    early_stop_on_strong_evidence: true,
+  },
+  artifacts: [],
+  checksum: 'sha256:fpmission_rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr',
+};
+
+const FP_EVIDENCE: DynamicEvidencePackage = {
+  schema_version: '1.0.0',
+  event_type: 'DynamicEvidencePackage',
+  message_id: 'msg_fp_evidence_01',
+  created_at: '2026-05-27T08:55:00Z',
+  source_agent: 'ConsumerDynamicEvidenceAgent',
+  target_agent: 'ProducerStaticTriageAgent',
+  case_identity: FP_IDENTITY,
+  execution_summary: {
+    status: 'completed',
+    runtime_verdict_candidate: 'false_positive',
+    dynamic_score: 0,
+    confidence: 0.86,
+    summary:
+      'Static suspicion disproved. WebView.loadUrl only ever received bundled asset URLs (file:///android_asset/tutorials/*.html). No remote control observed. Network traffic was legitimate streaming telemetry.',
+  },
+  budget_usage: {
+    actual_total_minutes: 22,
+    actual_iterations: 3,
+    vpn_countries_tested: ['US'],
+    stop_reason: 'static_suspicion_disproved',
+  },
+  ioc_scores: [],
+  experiments: [
+    {
+      iteration: 1,
+      goal: 'Capture WebView destinations',
+      country: 'US',
+      tools_used: ['frida', 'http_toolkit'],
+      hooks_enabled: ['android.webkit.WebView.loadUrl'],
+      result: 'WebView.loadUrl received file:///android_asset/tutorials/getting-started.html — bundled content.',
+      artifacts: ['artifacts/dynamic/review_2026_000312/hooks/webview_bundled.json'],
+      next_decision: 'Verify no remote loading happens after deeper navigation',
+    },
+    {
+      iteration: 2,
+      goal: 'Navigate through tutorials and check for late remote URLs',
+      country: 'US',
+      tools_used: ['logcat', 'http_toolkit'],
+      hooks_enabled: ['android.webkit.WebView.loadUrl'],
+      result: 'All WebView destinations remained bundled. Network traffic = streaming telemetry only.',
+      artifacts: ['artifacts/dynamic/review_2026_000312/network/full_session.har'],
+      next_decision: 'Disprove riskware hypothesis — FP outcome',
+    },
+  ],
+  evidence_items: [],
+  runtime_trace: [
+    { step: 1, event: 'App launched' },
+    { step: 2, event: 'WebView only loaded bundled assets across full session' },
+    { step: 3, event: 'No remote-controlled flow observed' },
+  ],
+  limitations: [
+    'Only US session was tested — non-target geographies not validated.',
+    'Future versions could introduce remote URL loading; re-investigate on update.',
+  ],
+  recommended_next_action: 'close_as_false_positive',
+  checksum: 'sha256:fpevidence_ssssssssssssssssssssssssssssssssssssssssssssssssss',
+};
+
+// =====================================================================
+// EXPLORATORY-FINDING CASE — dynamic discovered an unanticipated IOC
+// =====================================================================
+
+const EXPL_IDENTITY = {
+  app_review_id: 'review_2026_000333',
+  queue_item_id: 'qitem_008',
+  package_name: 'com.snapread.scanner',
+  app_name: 'SnapRead OCR Scanner',
+  version_name: '3.7.2',
+  version_code: 372,
+  category_id: 'riskware',
+  category_name: 'Riskware',
+};
+
+const EXPL_META: ProducerMetadata = {
+  developer_country: 'Unknown',
+  developer_reputation: 'low',
+  developer_account_age_days: 95,
+  related_packages: ['com.snapread.translate'],
+  prior_flags: [],
+  target_markets: ['ID', 'BD', 'NG'],
+  monetization_signals: ['rewards-sdk', 'iap'],
+};
+
+const EXPL_METADATA_SCORECARD = makeMetadataScorecard(EXPL_IDENTITY, EXPL_META, 'expl');
+const EXPL_METADATA_GATE = makeMetadataGateDecision(EXPL_IDENTITY, EXPL_METADATA_SCORECARD, EXPL_META);
+
+const EXPL_INSTALL = makeInstallVerification(true);
+
+const EXPL_SLICE: StaticSliceSummary = {
+  status: 'completed',
+  decompile_status: 'success',
+  manifest_parsed: true,
+  native_files_detected: false,
+  network_strings_detected: true,
+  webview_usage_detected: true,
+  candidate_flows: [
+    {
+      flow_id: 'flow_expl_webview',
+      summary: 'WebView used for reward-claim screens.',
+      source: 'RewardsApi.fetchReward',
+      sink: 'RewardWebView.loadUrl',
+      confidence: 0.68,
+    },
+  ],
+};
+
+const EXPL_SCORECARD: StaticFunnelScorecard = {
+  schema_version: '1.0.0',
+  event_type: 'StaticFunnelScorecard',
+  message_id: 'msg_expl_scorecard_01',
+  created_at: '2026-05-27T09:00:00Z',
+  source_agent: 'StaticFunnelWorker',
+  case_identity: EXPL_IDENTITY,
+  install_verification: EXPL_INSTALL,
+  static_slice: EXPL_SLICE,
+  rubric_potential: {
+    candidate_score: 9,
+    threshold_for_dynamic_analysis: 8,
+    requires_dynamic_analysis: true,
+    reason: 'WebView + reward server flow + monetization-heavy app. Worth dynamic confirmation.',
+  },
+  candidate_iocs: [
+    { ioc_id: 'rw_remote_controlled_webview', level: 'medium', confidence: 0.68, reason: 'Reward-claim WebView could receive server-controlled URLs.' },
+    { ioc_id: 'rw_c2_endpoint', level: 'medium', confidence: 0.71, reason: 'Reward server is the runtime configuration source.' },
+  ],
+  missing_rubric_signals: [],
+  checksum: 'sha256:5c0recardexplttttttttttttttttttttttttttttttttttttttttttttttttttt',
+};
+
+const EXPL_GATE: GateDecision = {
+  case_identity: EXPL_IDENTITY,
+  policy_applied: RISKWARE_GATE_POLICY,
+  candidate_score: 9,
+  triggered_force_rules: ['remote_controlled_webview_candidate'],
+  status: 'DYNAMIC_ANALYSIS_REQUIRED',
+  next_step: 'BUILD_DYNAMIC_MISSION_PACKAGE',
+  explanation: 'Score 9 ≥ threshold 8 AND force-rule fired. Escalate to dynamic.',
+  decided_at: '2026-05-27T09:01:00Z',
+};
+
+const EXPL_MISSION: ReviewMissionPackage = {
+  ...FP_MISSION,
+  message_id: 'msg_expl_mission_01',
+  case_identity: EXPL_IDENTITY,
+  producer_metadata: EXPL_META,
+  static_triage: {
+    candidate_score: 9,
+    top_ioc_candidates: EXPL_SCORECARD.candidate_iocs,
+    execution_hypothesis: {
+      summary: 'Reward server controls WebView destination on claim flow.',
+      suspected_flow: ['App launch', 'Spin', 'Reward claim', 'WebView opens server URL'],
+      function_call_trace: [],
+    },
+    suspicious_urls: [],
+    suspicious_native_files: [],
+    suggested_hooks: [
+      { target: 'android.webkit.WebView.loadUrl', goal: 'Capture WebView destination' },
+      { target: 'com.snapread.api.RewardsApi.fetchReward', goal: 'Capture reward server response' },
+    ],
+  },
+  consumer_budget: { max_total_minutes: 45, max_iterations: 6, max_vpn_countries: 3, max_hook_revisions: 3, early_stop_on_strong_evidence: false },
+  checksum: 'sha256:explmission_uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu',
+};
+
+const EXPL_FINDING: ExploratoryFinding = {
+  finding_id: 'finding_expl_001',
+  case_identity: EXPL_IDENTITY,
+  unanticipated_ioc_id: 'rw_sms_premium_subscription_trap',
+  unanticipated_ioc_name: 'SMS premium subscription trap (unanticipated)',
+  level: 'strong',
+  confidence: 0.89,
+  description:
+    'During exploration of the rewards flow, the Investigator observed a hidden code path triggering SMS subscription consent to a premium short-code. This is a DIFFERENT IOC than the static-predicted "remote-controlled WebView". Captured under the budget breathing room.',
+  evidence_artifacts: [
+    'artifacts/dynamic/review_2026_000333/hooks/sms_send_intent.json',
+    'artifacts/dynamic/review_2026_000333/screenshots/sms_consent_overlay.png',
+  ],
+  budget_breathing_room_used_minutes: 8,
+  why_static_missed_it: 'The SMS subscription path was triggered only after 4 spin-attempts in the reward flow — too deep for static slicing to reach with a fast pass. Static found the WebView but not the SMS branch.',
+};
+
+const EXPL_EVIDENCE: DynamicEvidencePackage = {
+  schema_version: '1.0.0',
+  event_type: 'DynamicEvidencePackage',
+  message_id: 'msg_expl_evidence_01',
+  created_at: '2026-05-27T09:50:00Z',
+  source_agent: 'ConsumerDynamicEvidenceAgent',
+  target_agent: 'ProducerStaticTriageAgent',
+  case_identity: EXPL_IDENTITY,
+  execution_summary: {
+    status: 'completed',
+    runtime_verdict_candidate: 'exploratory_finding',
+    dynamic_score: 8,
+    confidence: 0.89,
+    summary:
+      'Static-predicted WebView flow was inconclusive, but exploratory mode discovered an UNANTICIPATED IOC: SMS premium subscription trap triggered after multiple reward spins. Strong evidence captured within budget breathing room.',
+    exploratory_finding: EXPL_FINDING,
+  },
+  budget_usage: {
+    actual_total_minutes: 41,
+    actual_iterations: 5,
+    vpn_countries_tested: ['US', 'ID'],
+    stop_reason: 'exploratory_strong_evidence_found',
+  },
+  ioc_scores: [
+    {
+      ioc_id: EXPL_FINDING.unanticipated_ioc_id,
+      level: 'strong',
+      confidence: 0.89,
+      reason: 'SMS_SEND intent captured via Frida hook + screenshot of consent overlay. Premium short-code confirmed.',
+      evidence_refs: EXPL_FINDING.evidence_artifacts,
+    },
+  ],
+  experiments: [
+    {
+      iteration: 1,
+      goal: 'Baseline + capture WebView destinations',
+      country: 'US',
+      tools_used: ['frida', 'http_toolkit'],
+      hooks_enabled: ['android.webkit.WebView.loadUrl'],
+      result: 'WebView loaded reward server pages — looked benign so far.',
+      artifacts: [],
+      next_decision: 'Explore deeper reward flow',
+    },
+    {
+      iteration: 2,
+      goal: 'Spin and claim multiple rewards to probe behavior',
+      country: 'ID',
+      tools_used: ['logcat', 'frida'],
+      hooks_enabled: ['android.webkit.WebView.loadUrl', 'com.snapread.api.RewardsApi.fetchReward'],
+      result: 'After 4 spins, an SMS consent overlay appeared — NEW signal, not in the static hypothesis.',
+      artifacts: ['artifacts/dynamic/review_2026_000333/screenshots/sms_consent_overlay.png'],
+      next_decision: 'Enter exploratory mode — hook SMS intents',
+    },
+    {
+      iteration: 3,
+      goal: 'EXPLORATORY: hook SmsManager and intent senders',
+      country: 'ID',
+      tools_used: ['frida', 'logcat'],
+      hooks_enabled: ['android.telephony.SmsManager.sendTextMessage', 'android.content.Intent.<init>'],
+      result: 'SMS_SEND intent captured with body "SUBSCRIBE WIN" to premium short-code 36661. Confirmed billing path.',
+      artifacts: ['artifacts/dynamic/review_2026_000333/hooks/sms_send_intent.json'],
+      next_decision: 'Strong evidence captured — stop and report exploratory finding',
+    },
+  ],
+  evidence_items: [
+    {
+      evidence_id: 'ev_expl_sms',
+      ioc_ids: [EXPL_FINDING.unanticipated_ioc_id],
+      type: 'hook_log',
+      title: 'SMS_SEND intent to premium short-code',
+      description: 'Captured outbound SMS intent during reward-spin flow.',
+      severity: 'high',
+      confidence: 0.92,
+      artifact: {
+        artifact_id: 'art_expl_sms',
+        artifact_type: 'hook_log',
+        path: 'artifacts/dynamic/review_2026_000333/hooks/sms_send_intent.json',
+        sha256: 'sha256:explsmsuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu',
+        mime_type: 'application/json',
+      },
+    },
+    {
+      evidence_id: 'ev_expl_screenshot',
+      ioc_ids: [EXPL_FINDING.unanticipated_ioc_id],
+      type: 'screenshot',
+      title: 'SMS consent overlay after reward spin',
+      description: 'Screenshot of the hidden subscription consent that appears during the reward flow.',
+      severity: 'high',
+      confidence: 0.88,
+      artifact: {
+        artifact_id: 'art_expl_screenshot',
+        artifact_type: 'screenshot',
+        path: 'artifacts/dynamic/review_2026_000333/screenshots/sms_consent_overlay.png',
+        sha256: 'sha256:explsswwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww',
+        mime_type: 'image/png',
+      },
+    },
+  ],
+  runtime_trace: [
+    { step: 1, event: 'Static-predicted WebView flow inconclusive' },
+    { step: 2, event: 'Entered exploratory mode after spotting SMS overlay' },
+    { step: 3, event: 'Hooked SMS intents and captured outbound premium send', artifact_ref: 'ev_expl_sms' },
+    { step: 4, event: 'Screenshot captured consent overlay', artifact_ref: 'ev_expl_screenshot' },
+  ],
+  limitations: [
+    'Static phase did not predict this IOC — rubric should be updated.',
+    'Only triggered after 4 spin attempts; static slicing did not reach this branch.',
+  ],
+  recommended_next_action: 'submit_with_rubric_update_request',
+  checksum: 'sha256:explevidence_vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv',
+};
+
+const GRC_001_METADATA_SCORECARD = makeMetadataScorecard(GRC_001_IDENTITY, GRC_001_MISSION.producer_metadata, 'grc001');
+const GRC_001_METADATA_GATE = makeMetadataGateDecision(GRC_001_IDENTITY, GRC_001_METADATA_SCORECARD, GRC_001_MISSION.producer_metadata);
+const GRC_002_METADATA_SCORECARD = makeMetadataScorecard(GRC_002_IDENTITY, GRC_002_MISSION.producer_metadata, 'grc002');
+const GRC_002_METADATA_GATE = makeMetadataGateDecision(GRC_002_IDENTITY, GRC_002_METADATA_SCORECARD, GRC_002_MISSION.producer_metadata);
+const CLOSURE_METADATA = {
+  developer_country: 'CA',
+  developer_reputation: 'medium' as const,
+  developer_account_age_days: 920,
+  related_packages: ['com.lumenlabs.todo'],
+  prior_flags: [],
+  target_markets: [],
+  monetization_signals: [],
+};
+const CLOSURE_METADATA_SCORECARD = makeMetadataScorecard(CLOSURE_IDENTITY, CLOSURE_METADATA, 'closure');
+const CLOSURE_METADATA_GATE = makeMetadataGateDecision(CLOSURE_IDENTITY, CLOSURE_METADATA_SCORECARD, CLOSURE_METADATA);
+
 export const QUEUE_CASES: QueueCase[] = [
-  // Case 1 (FULL LOOP): GRC-001 — funnel → gate → dynamic → deep report
+  // Case 1 (FULL LOOP): GRC-001 — metadata gate passes → funnel → gate → dynamic → deep report
   {
     case_identity: GRC_001_IDENTITY,
     producer_status: 'DEEP_REPORT_READY',
@@ -709,6 +1328,8 @@ export const QUEUE_CASES: QueueCase[] = [
     metadata: GRC_001_MISSION.producer_metadata,
     rubric: RISKWARE_RUBRIC,
     queue_lock: GRC_001_LOCK,
+    metadata_scorecard: GRC_001_METADATA_SCORECARD,
+    metadata_gate: GRC_001_METADATA_GATE,
     install_verification: GRC_001_INSTALL,
     static_slice_summary: GRC_001_SLICE,
     scorecard: GRC_001_SCORECARD,
@@ -730,6 +1351,8 @@ export const QUEUE_CASES: QueueCase[] = [
     metadata: GRC_002_MISSION.producer_metadata,
     rubric: RISKWARE_RUBRIC,
     queue_lock: makeLock(GRC_002_IDENTITY.app_review_id, GRC_002_IDENTITY.queue_item_id),
+    metadata_scorecard: GRC_002_METADATA_SCORECARD,
+    metadata_gate: GRC_002_METADATA_GATE,
     install_verification: GRC_002_SCORECARD.install_verification,
     static_slice_summary: GRC_002_SCORECARD.static_slice,
     scorecard: GRC_002_SCORECARD,
@@ -737,7 +1360,69 @@ export const QUEUE_CASES: QueueCase[] = [
     static_triage: GRC_002_MISSION.static_triage,
     mission_package: GRC_002_MISSION,
   },
-  // Case 3 (CLOSED EARLY): Lumen Notepad — funnel → gate → closure report
+  // Case M (METADATA CLOSURE): ClearNote — closes at metadata gate, never installed
+  {
+    case_identity: META_CLOSURE_IDENTITY,
+    producer_status: 'METADATA_INSUFFICIENT_CLOSED',
+    consumer_status: null,
+    priority: 'low',
+    static_score: 0,
+    dynamic_score: 0,
+    final_score: 0,
+    metadata: META_CLOSURE_META,
+    rubric: RISKWARE_RUBRIC,
+    queue_lock: makeLock(META_CLOSURE_IDENTITY.app_review_id, META_CLOSURE_IDENTITY.queue_item_id),
+    metadata_scorecard: META_CLOSURE_SCORECARD,
+    metadata_gate: META_CLOSURE_GATE,
+    metadata_closure_report: META_CLOSURE_REPORT,
+    static_triage: EMPTY_STATIC_TRIAGE,
+  },
+  // Case FP (FALSE POSITIVE): Mira Music — full chain, dynamic disproves static
+  {
+    case_identity: FP_IDENTITY,
+    producer_status: 'FALSE_POSITIVE_CLOSED',
+    consumer_status: 'EVIDENCE_PACKAGE_SENT',
+    priority: 'medium',
+    static_score: sumIocPoints(FP_SCORECARD.candidate_iocs),
+    dynamic_score: 0,
+    final_score: 0,
+    metadata: FP_META,
+    rubric: RISKWARE_RUBRIC,
+    queue_lock: makeLock(FP_IDENTITY.app_review_id, FP_IDENTITY.queue_item_id),
+    metadata_scorecard: FP_METADATA_SCORECARD,
+    metadata_gate: FP_METADATA_GATE,
+    install_verification: FP_INSTALL,
+    static_slice_summary: FP_SLICE,
+    scorecard: FP_SCORECARD,
+    gate_decision: FP_GATE,
+    static_triage: FP_MISSION.static_triage,
+    mission_package: FP_MISSION,
+    evidence_package: FP_EVIDENCE,
+  },
+  // Case EX (EXPLORATORY FINDING): SnapRead OCR — dynamic discovers unanticipated IOC
+  {
+    case_identity: EXPL_IDENTITY,
+    producer_status: 'EXPLORATORY_FINDING_READY',
+    consumer_status: 'EVIDENCE_PACKAGE_SENT',
+    priority: 'high',
+    static_score: sumIocPoints(EXPL_SCORECARD.candidate_iocs),
+    dynamic_score: 8,
+    final_score: 8,
+    metadata: EXPL_META,
+    rubric: RISKWARE_RUBRIC,
+    queue_lock: makeLock(EXPL_IDENTITY.app_review_id, EXPL_IDENTITY.queue_item_id),
+    metadata_scorecard: EXPL_METADATA_SCORECARD,
+    metadata_gate: EXPL_METADATA_GATE,
+    install_verification: EXPL_INSTALL,
+    static_slice_summary: EXPL_SLICE,
+    scorecard: EXPL_SCORECARD,
+    gate_decision: EXPL_GATE,
+    static_triage: EXPL_MISSION.static_triage,
+    mission_package: EXPL_MISSION,
+    evidence_package: EXPL_EVIDENCE,
+    exploratory_finding: EXPL_FINDING,
+  },
+  // Case 3 (STATIC CLOSURE): Lumen Notepad — metadata passes but static fails
   {
     case_identity: CLOSURE_IDENTITY,
     producer_status: 'STATIC_INSUFFICIENT_CLOSED',
@@ -746,17 +1431,11 @@ export const QUEUE_CASES: QueueCase[] = [
     static_score: 2,
     dynamic_score: 0,
     final_score: 2,
-    metadata: {
-      developer_country: 'CA',
-      developer_reputation: 'medium',
-      developer_account_age_days: 920,
-      related_packages: ['com.lumenlabs.todo'],
-      prior_flags: [],
-      target_markets: [],
-      monetization_signals: [],
-    },
+    metadata: CLOSURE_METADATA,
     rubric: RISKWARE_RUBRIC,
     queue_lock: makeLock(CLOSURE_IDENTITY.app_review_id, CLOSURE_IDENTITY.queue_item_id),
+    metadata_scorecard: CLOSURE_METADATA_SCORECARD,
+    metadata_gate: CLOSURE_METADATA_GATE,
     install_verification: CLOSURE_SCORECARD.install_verification,
     static_slice_summary: CLOSURE_SCORECARD.static_slice,
     scorecard: CLOSURE_SCORECARD,
@@ -765,8 +1444,8 @@ export const QUEUE_CASES: QueueCase[] = [
     static_triage: EMPTY_STATIC_TRIAGE,
   },
   // Case 4 (STATIC SLICE COMPLETE): CoinMint Spin & Win — scorecard ready, awaiting gate
-  {
-    case_identity: {
+  ((): QueueCase => {
+    const id = {
       app_review_id: 'review_2026_000201',
       queue_item_id: 'qitem_003',
       package_name: 'com.coinmint.spinwin',
@@ -775,14 +1454,8 @@ export const QUEUE_CASES: QueueCase[] = [
       version_code: 147,
       category_id: 'riskware',
       category_name: 'Riskware',
-    },
-    producer_status: 'STATIC_SCORECARD_READY',
-    consumer_status: null,
-    priority: 'critical',
-    static_score: 12,
-    dynamic_score: 0,
-    final_score: 0,
-    metadata: {
+    };
+    const meta: ProducerMetadata = {
       developer_country: 'CN',
       developer_reputation: 'low',
       developer_account_age_days: 14,
@@ -790,9 +1463,22 @@ export const QUEUE_CASES: QueueCase[] = [
       prior_flags: ['Sibling app removed for deceptive monetization'],
       target_markets: ['BR', 'MX', 'AR'],
       monetization_signals: ['rewards SDK', 'offerwall integration'],
-    },
+    };
+    const sc = makeMetadataScorecard(id, meta, 'coinmint');
+    const gate = makeMetadataGateDecision(id, sc, meta);
+    return {
+    case_identity: id,
+    producer_status: 'STATIC_SCORECARD_READY',
+    consumer_status: null,
+    priority: 'critical',
+    static_score: 12,
+    dynamic_score: 0,
+    final_score: 0,
+    metadata: meta,
     rubric: RISKWARE_RUBRIC,
     queue_lock: makeLock('review_2026_000201', 'qitem_003'),
+    metadata_scorecard: sc,
+    metadata_gate: gate,
     install_verification: makeInstallVerification(true),
     static_slice_summary: {
       status: 'completed',
@@ -827,10 +1513,11 @@ export const QUEUE_CASES: QueueCase[] = [
       suspicious_native_files: [],
       suggested_hooks: [],
     },
-  },
+  };
+  })(),
   // Case 5 (QUEUE LOCKED, FUNNEL RUNNING): Zenith Live Wallpaper
-  {
-    case_identity: {
+  ((): QueueCase => {
+    const id = {
       app_review_id: 'review_2026_000219',
       queue_item_id: 'qitem_004',
       package_name: 'com.zenith.wallpaper',
@@ -839,14 +1526,8 @@ export const QUEUE_CASES: QueueCase[] = [
       version_code: 310,
       category_id: 'riskware',
       category_name: 'Riskware',
-    },
-    producer_status: 'STATIC_SLICE_RUNNING',
-    consumer_status: null,
-    priority: 'low',
-    static_score: 0,
-    dynamic_score: 0,
-    final_score: 0,
-    metadata: {
+    };
+    const meta: ProducerMetadata = {
       developer_country: 'Unknown',
       developer_reputation: 'unknown',
       developer_account_age_days: 3,
@@ -854,12 +1535,26 @@ export const QUEUE_CASES: QueueCase[] = [
       prior_flags: [],
       target_markets: [],
       monetization_signals: [],
-    },
-    rubric: RISKWARE_RUBRIC,
-    queue_lock: makeLock('review_2026_000219', 'qitem_004'),
-    install_verification: makeInstallVerification(true),
-    static_triage: EMPTY_STATIC_TRIAGE,
-  },
+    };
+    const sc = makeMetadataScorecard(id, meta, 'zenith');
+    const gate = makeMetadataGateDecision(id, sc, meta);
+    return {
+      case_identity: id,
+      producer_status: 'STATIC_SLICE_RUNNING',
+      consumer_status: null,
+      priority: 'low',
+      static_score: 0,
+      dynamic_score: 0,
+      final_score: 0,
+      metadata: meta,
+      rubric: RISKWARE_RUBRIC,
+      queue_lock: makeLock('review_2026_000219', 'qitem_004'),
+      metadata_scorecard: sc,
+      metadata_gate: gate,
+      install_verification: makeInstallVerification(true),
+      static_triage: EMPTY_STATIC_TRIAGE,
+    };
+  })(),
 ];
 
 // =====================================================================
