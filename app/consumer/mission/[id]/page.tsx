@@ -1,14 +1,17 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getCaseByReviewId } from '@/lib/mock-data';
+import { getConsumerMission } from '@/lib/consumer-inbox';
 import { Panel, KV } from '@/components/chrome/Panel';
 import { StatusBadge, PriorityBadge, IocLevelBadge } from '@/components/status/StatusBadge';
 import { EscalatedByRuleBanner } from '@/components/pipeline/EscalatedByRuleBanner';
 
+// Consumer mission workspace reads ONLY from the consumer inbox —
+// no Producer-side fields (metadata, scorecard, worker analytics,
+// deep report) are accessible from this page.
 export default async function MissionWorkspace({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const c = getCaseByReviewId(id);
-  if (!c || !c.consumer_status || !c.mission_package) notFound();
+  const c = getConsumerMission(id);
+  if (!c) notFound();
 
   const m = c.mission_package;
   const e = c.evidence_package;
@@ -34,7 +37,18 @@ export default async function MissionWorkspace({ params }: { params: Promise<{ i
         </div>
       </div>
 
-      {c.gate_decision && <EscalatedByRuleBanner gate={c.gate_decision} />}
+      {c.gate_context && (
+        <EscalatedByRuleBanner
+          gate={{
+            // Synthesize a GateDecision-shaped object from the inbox-
+            // visible slice the Producer embedded for context.
+            ...c.gate_context,
+            case_identity: c.case_identity,
+            next_step: 'BUILD_DYNAMIC_MISSION_PACKAGE',
+            decided_at: '',
+          }}
+        />
+      )}
 
       <div className="grid grid-cols-3 gap-6">
         {/* Left: Mission brief */}

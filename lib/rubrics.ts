@@ -96,18 +96,46 @@ export const RISKWARE_RUBRIC: IocRubric = {
       ioc_id: 'rw_remote_config_flag',
       name: 'Remote config flag enables hidden behavior',
       levels: {
-        weak: {
-          points: 2,
-          definition: 'Remote config request observed with feature-flag-like keys.',
-        },
-        medium: {
-          points: 4,
-          definition: 'Code branches on remote flag and changes runtime behavior.',
-        },
-        strong: {
-          points: 8,
-          definition: 'Runtime confirms flagged behavior differs from baseline (e.g., hidden offer/redirect).',
-        },
+        weak: { points: 2, definition: 'Remote config request observed with feature-flag-like keys.' },
+        medium: { points: 4, definition: 'Code branches on remote flag and changes runtime behavior.' },
+        strong: { points: 8, definition: 'Runtime confirms flagged behavior differs from baseline (e.g., hidden offer/redirect).' },
+      },
+    },
+    // ---- Strong riskware families from the architect brief ----
+    {
+      ioc_id: 'rw_decrypt_asset_dexload',
+      name: 'Decrypts asset file and executes via DexClassLoader',
+      levels: {
+        weak: { points: 2, definition: 'DexClassLoader / PathClassLoader present alongside encrypted assets.' },
+        medium: { points: 4, definition: 'Static flow shows AssetLoader output decoded then fed to DexClassLoader.' },
+        strong: { points: 8, definition: 'Runtime captures the decrypted DEX file AND ClassLoader.loadClass call.' },
+      },
+    },
+    {
+      ioc_id: 'rw_http_url_in_webview',
+      name: 'Cleartext HTTP URL loaded in WebView',
+      levels: {
+        weak: { points: 2, definition: 'Cleartext http:// strings appear near WebView usage.' },
+        medium: { points: 4, definition: 'Code path shows http:// URL feeding WebView.loadUrl().' },
+        strong: { points: 8, definition: 'Runtime hook captures WebView.loadUrl("http://…") with cleartext over the wire.' },
+      },
+    },
+    {
+      ioc_id: 'rw_firebase_remote_url',
+      name: 'Firebase Remote Config URL loaded',
+      levels: {
+        weak: { points: 2, definition: 'Firebase Remote Config / Firestore strings present.' },
+        medium: { points: 4, definition: 'Code retrieves a URL string from Firebase and routes it to a WebView.' },
+        strong: { points: 8, definition: 'Runtime captures Firebase payload + WebView destination set from that payload.' },
+      },
+    },
+    {
+      ioc_id: 'rw_attribution_conversion_payload',
+      name: 'Attribution-conversion callback supplies destination URL',
+      levels: {
+        weak: { points: 2, definition: 'AppsFlyer / Adjust SDK present alongside WebView.' },
+        medium: { points: 4, definition: 'onConversionDataSuccess return value feeds WebView.loadUrl.' },
+        strong: { points: 8, definition: 'Runtime captures attribution payload and WebView destination set from it.' },
       },
     },
   ],

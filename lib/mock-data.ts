@@ -1689,6 +1689,283 @@ export const QUEUE_CASES: QueueCase[] = [
       static_triage: EMPTY_STATIC_TRIAGE,
     };
   })(),
+
+  // ===================================================================
+  // FAMILY: DexClassLoader dropper — decrypts asset, executes via reflection
+  // ===================================================================
+  ((): QueueCase => {
+    const id = {
+      app_review_id: 'review_2026_000401',
+      queue_item_id: 'qitem_010',
+      package_name: 'com.nyxlabs.battery',
+      app_name: 'NyxBattery Saver',
+      version_name: '2.0.3',
+      version_code: 203,
+      category_id: 'riskware',
+      category_name: 'Riskware',
+    };
+    const meta: ProducerMetadata = {
+      developer_country: 'Unknown',
+      developer_reputation: 'low',
+      developer_account_age_days: 28,
+      related_packages: ['com.nyxlabs.cleaner', 'com.nyxlabs.booster'],
+      prior_flags: ['Sibling app removed for dynamic code loading'],
+      target_markets: ['ID', 'BD', 'NG'],
+      monetization_signals: ['rewards-sdk'],
+    };
+    const sc = makeMetadataScorecard(id, meta, 'nyx');
+    const gate = makeMetadataGateDecision(id, sc, meta);
+    return {
+      case_identity: id,
+      producer_status: 'CONSUMER_RUNNING',
+      consumer_status: 'DYNAMIC_RUNNING',
+      priority: 'critical',
+      static_score: 8,
+      dynamic_score: 0,
+      final_score: 0,
+      metadata: meta,
+      rubric: RISKWARE_RUBRIC,
+      queue_lock: makeLock(id.app_review_id, id.queue_item_id),
+      metadata_scorecard: sc,
+      metadata_gate: gate,
+      install_verification: makeInstallVerification(true),
+      slice_verification: makeSliceVerification(true),
+      static_slice_summary: {
+        status: 'completed',
+        decompile_status: 'success',
+        manifest_parsed: true,
+        native_files_detected: true,
+        network_strings_detected: true,
+        webview_usage_detected: false,
+        candidate_flows: [
+          { flow_id: 'flow_dex_drop_001', summary: 'AssetLoader.openFile → CryptoUtil.decrypt → DexClassLoader(<init>)', source: 'AssetLoader.openFile', transform: 'CryptoUtil.decrypt', sink: 'dalvik.system.DexClassLoader.<init>', confidence: 0.82 },
+        ],
+      },
+      static_triage: {
+        candidate_score: 8,
+        top_ioc_candidates: [
+          { ioc_id: 'rw_decrypt_asset_dexload', level: 'medium', confidence: 0.82, reason: 'Asset decryption stub feeds a DexClassLoader constructor.' },
+        ],
+        execution_hypothesis: {
+          summary: 'App decrypts a packed payload from assets/ at runtime and loads it via DexClassLoader.',
+          suspected_flow: ['App launch', 'AssetLoader.openFile("p.bin")', 'CryptoUtil.decrypt(buf)', 'new DexClassLoader(...)'],
+          function_call_trace: [
+            { order: 1, class: 'com.nyxlabs.MainActivity', method: 'onCreate', reason: 'Entry point' },
+            { order: 2, class: 'com.nyxlabs.assets.AssetLoader', method: 'openFile', reason: 'Reads encrypted blob from assets', related_ioc_ids: ['rw_decrypt_asset_dexload'] },
+            { order: 3, class: 'com.nyxlabs.crypto.CryptoUtil', method: 'decrypt', reason: 'Decryption stub' },
+            { order: 4, class: 'dalvik.system.DexClassLoader', method: '<init>', reason: 'Loads decrypted DEX', related_ioc_ids: ['rw_decrypt_asset_dexload'] },
+          ],
+        },
+        suspicious_urls: [],
+        suspicious_native_files: [{ path: 'assets/p.bin', severity: 'high', reason: 'High-entropy blob loaded at runtime.' }],
+        suggested_hooks: [
+          { target: 'java.io.InputStream.read', goal: 'Capture decrypted bytes from CryptoUtil', related_ioc_ids: ['rw_decrypt_asset_dexload'] },
+          { target: 'dalvik.system.DexClassLoader.<init>', goal: 'Capture path of loaded DEX', related_ioc_ids: ['rw_decrypt_asset_dexload'] },
+          { target: 'java.lang.ClassLoader.loadClass', goal: 'Capture class names invoked from decrypted DEX', related_ioc_ids: ['rw_decrypt_asset_dexload'] },
+        ],
+      },
+    };
+  })(),
+
+  // ===================================================================
+  // FAMILY: HTTP-in-WebView — cleartext URL load
+  // ===================================================================
+  ((): QueueCase => {
+    const id = {
+      app_review_id: 'review_2026_000412',
+      queue_item_id: 'qitem_011',
+      package_name: 'com.spinpix.dailyclaim',
+      app_name: 'SpinPix Daily Claim',
+      version_name: '1.0.4',
+      version_code: 104,
+      category_id: 'riskware',
+      category_name: 'Riskware',
+    };
+    const meta: ProducerMetadata = {
+      developer_country: 'Unknown',
+      developer_reputation: 'low',
+      developer_account_age_days: 12,
+      related_packages: [],
+      prior_flags: [],
+      target_markets: ['IN', 'PK'],
+      monetization_signals: ['cleartext-tracker'],
+    };
+    const sc = makeMetadataScorecard(id, meta, 'spinpix');
+    const gate = makeMetadataGateDecision(id, sc, meta);
+    return {
+      case_identity: id,
+      producer_status: 'STATIC_SCORECARD_READY',
+      consumer_status: null,
+      priority: 'high',
+      static_score: 4,
+      dynamic_score: 0,
+      final_score: 0,
+      metadata: meta,
+      rubric: RISKWARE_RUBRIC,
+      queue_lock: makeLock(id.app_review_id, id.queue_item_id),
+      metadata_scorecard: sc,
+      metadata_gate: gate,
+      install_verification: makeInstallVerification(true),
+      slice_verification: makeSliceVerification(true),
+      static_slice_summary: {
+        status: 'completed',
+        decompile_status: 'success',
+        manifest_parsed: true,
+        native_files_detected: false,
+        network_strings_detected: true,
+        webview_usage_detected: true,
+        candidate_flows: [
+          { flow_id: 'flow_http_wv_001', summary: 'http:// constant directly passed to WebView.loadUrl', source: 'StringConstants.PROMO_URL', sink: 'WebView.loadUrl', confidence: 0.74 },
+        ],
+      },
+      static_triage: {
+        candidate_score: 4,
+        top_ioc_candidates: [
+          { ioc_id: 'rw_http_url_in_webview', level: 'medium', confidence: 0.74, reason: 'Cleartext http:// constant in code feeds WebView.loadUrl().' },
+        ],
+        execution_hypothesis: { summary: 'WebView loads a cleartext URL — MITM-prone.', suspected_flow: ['Splash', 'WebView.loadUrl(http://promo.spinpix.io/c)'], function_call_trace: [] },
+        suspicious_urls: [{ url: 'http://promo.spinpix.io/c', severity: 'high', reason: 'Cleartext load destination.' }],
+        suspicious_native_files: [],
+        suggested_hooks: [{ target: 'android.webkit.WebView.loadUrl', goal: 'Confirm cleartext scheme used at runtime', related_ioc_ids: ['rw_http_url_in_webview'] }],
+      },
+    };
+  })(),
+
+  // ===================================================================
+  // FAMILY: Firebase Remote Config URL
+  // ===================================================================
+  ((): QueueCase => {
+    const id = {
+      app_review_id: 'review_2026_000423',
+      queue_item_id: 'qitem_012',
+      package_name: 'com.embergrow.tunes',
+      app_name: 'EmberGrow Tunes',
+      version_name: '3.4.0',
+      version_code: 340,
+      category_id: 'riskware',
+      category_name: 'Riskware',
+    };
+    const meta: ProducerMetadata = {
+      developer_country: 'CY',
+      developer_reputation: 'low',
+      developer_account_age_days: 60,
+      related_packages: ['com.embergrow.bass', 'com.embergrow.equalizer'],
+      prior_flags: [],
+      target_markets: ['BR', 'AR', 'MX'],
+      monetization_signals: ['offerwall-sdk', 'tracker-sdk'],
+    };
+    const sc = makeMetadataScorecard(id, meta, 'ember');
+    const gate = makeMetadataGateDecision(id, sc, meta);
+    return {
+      case_identity: id,
+      producer_status: 'CONSUMER_RUNNING',
+      consumer_status: 'DYNAMIC_RUNNING',
+      priority: 'high',
+      static_score: 8,
+      dynamic_score: 0,
+      final_score: 0,
+      metadata: meta,
+      rubric: RISKWARE_RUBRIC,
+      queue_lock: makeLock(id.app_review_id, id.queue_item_id),
+      metadata_scorecard: sc,
+      metadata_gate: gate,
+      install_verification: makeInstallVerification(true),
+      slice_verification: makeSliceVerification(true),
+      static_slice_summary: {
+        status: 'completed',
+        decompile_status: 'success',
+        manifest_parsed: true,
+        native_files_detected: false,
+        network_strings_detected: true,
+        webview_usage_detected: true,
+        candidate_flows: [
+          { flow_id: 'flow_firebase_url_001', summary: 'FirebaseRemoteConfig.getString("promo_url") → WebView.loadUrl', source: 'FirebaseRemoteConfig.getString', sink: 'WebView.loadUrl', confidence: 0.81 },
+        ],
+      },
+      static_triage: {
+        candidate_score: 8,
+        top_ioc_candidates: [
+          { ioc_id: 'rw_firebase_remote_url', level: 'medium', confidence: 0.81, reason: 'Firebase Remote Config string drives WebView destination.' },
+          { ioc_id: 'rw_remote_controlled_webview', level: 'medium', confidence: 0.78, reason: 'Server-supplied URL reaches WebView.' },
+        ],
+        execution_hypothesis: { summary: 'Firebase Remote Config supplies the WebView destination per geo.', suspected_flow: ['App launch', 'FirebaseRemoteConfig.fetch', 'WebView.loadUrl(returned URL)'], function_call_trace: [] },
+        suspicious_urls: [],
+        suspicious_native_files: [],
+        suggested_hooks: [
+          { target: 'com.google.firebase.remoteconfig.FirebaseRemoteConfig.getString', goal: 'Capture remote-config payload', related_ioc_ids: ['rw_firebase_remote_url'] },
+          { target: 'android.webkit.WebView.loadUrl', goal: 'Capture WebView destination', related_ioc_ids: ['rw_firebase_remote_url', 'rw_remote_controlled_webview'] },
+        ],
+      },
+    };
+  })(),
+
+  // ===================================================================
+  // FAMILY: AppsFlyer onConversionDataSuccess → WebView
+  // ===================================================================
+  ((): QueueCase => {
+    const id = {
+      app_review_id: 'review_2026_000434',
+      queue_item_id: 'qitem_013',
+      package_name: 'com.cryomedia.scanqr',
+      app_name: 'CryoMedia QR Scanner',
+      version_name: '5.1.2',
+      version_code: 512,
+      category_id: 'riskware',
+      category_name: 'Riskware',
+    };
+    const meta: ProducerMetadata = {
+      developer_country: 'Unknown',
+      developer_reputation: 'low',
+      developer_account_age_days: 41,
+      related_packages: ['com.cryomedia.filemanager'],
+      prior_flags: [],
+      target_markets: ['ID', 'PH'],
+      monetization_signals: ['appsflyer-sdk'],
+    };
+    const sc = makeMetadataScorecard(id, meta, 'cryomedia');
+    const gate = makeMetadataGateDecision(id, sc, meta);
+    return {
+      case_identity: id,
+      producer_status: 'DYNAMIC_ANALYSIS_REQUIRED',
+      consumer_status: 'MISSION_RECEIVED',
+      priority: 'medium',
+      static_score: 8,
+      dynamic_score: 0,
+      final_score: 0,
+      metadata: meta,
+      rubric: RISKWARE_RUBRIC,
+      queue_lock: makeLock(id.app_review_id, id.queue_item_id),
+      metadata_scorecard: sc,
+      metadata_gate: gate,
+      install_verification: makeInstallVerification(true),
+      slice_verification: makeSliceVerification(true),
+      static_slice_summary: {
+        status: 'completed',
+        decompile_status: 'success',
+        manifest_parsed: true,
+        native_files_detected: false,
+        network_strings_detected: true,
+        webview_usage_detected: true,
+        candidate_flows: [
+          { flow_id: 'flow_attribution_url_001', summary: 'AppsFlyerConversionListener.onConversionDataSuccess(data) → WebView.loadUrl(data["deep_link_value"])', source: 'AppsFlyerConversionListener.onConversionDataSuccess', sink: 'WebView.loadUrl', confidence: 0.80 },
+        ],
+      },
+      static_triage: {
+        candidate_score: 8,
+        top_ioc_candidates: [
+          { ioc_id: 'rw_attribution_conversion_payload', level: 'medium', confidence: 0.80, reason: 'AppsFlyer conversion payload supplies WebView destination.' },
+          { ioc_id: 'rw_remote_controlled_webview', level: 'medium', confidence: 0.74, reason: 'Server-supplied URL routed to WebView.loadUrl.' },
+        ],
+        execution_hypothesis: { summary: 'Attribution SDK returns a destination URL that the app then loads in a WebView.', suspected_flow: ['App launch', 'AppsFlyerLib.start', 'onConversionDataSuccess', 'WebView.loadUrl(data["deep_link_value"])'], function_call_trace: [] },
+        suspicious_urls: [],
+        suspicious_native_files: [],
+        suggested_hooks: [
+          { target: 'com.appsflyer.AppsFlyerConversionListener.onConversionDataSuccess', goal: 'Capture attribution payload', related_ioc_ids: ['rw_attribution_conversion_payload'] },
+          { target: 'android.webkit.WebView.loadUrl', goal: 'Capture WebView destination', related_ioc_ids: ['rw_attribution_conversion_payload', 'rw_remote_controlled_webview'] },
+        ],
+      },
+    };
+  })(),
 ];
 
 // =====================================================================

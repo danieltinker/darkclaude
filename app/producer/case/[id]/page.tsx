@@ -8,6 +8,7 @@ import { ScoreBar } from '@/components/score/ScoreBar';
 import { ScoreChip } from '@/components/score/ScoreNumber';
 import { ArtifactJsonViewer } from '@/components/artifact/ArtifactJsonViewer';
 import { TraceWithEvidence } from '@/components/evidence/TraceWithEvidence';
+import { QueueLockHeartbeat } from '@/components/pipeline/QueueLockHeartbeat';
 import { EvidenceBoard } from '@/components/evidence/EvidenceBoard';
 import { EscalatedByRuleBanner } from '@/components/pipeline/EscalatedByRuleBanner';
 
@@ -32,6 +33,7 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
           </div>
         </div>
         <div className="flex flex-col gap-2 items-end">
+          <QueueLockHeartbeat lock={c.queue_lock} />
           <PriorityBadge priority={c.priority} />
           <StatusBadge status={c.producer_status} side="producer" />
           {c.consumer_status && <StatusBadge status={c.consumer_status} side="consumer" />}
