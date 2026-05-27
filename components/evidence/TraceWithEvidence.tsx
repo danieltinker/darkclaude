@@ -17,7 +17,7 @@ export function TraceWithEvidence({ steps, evidenceItems, rubric }: Props) {
     return <div className="text-xs text-ink-muted">No trace recorded.</div>;
   }
   return (
-    <ol className="space-y-3">
+    <ol className="space-y-2">
       {steps.map(step => {
         const linked = (step.evidence_refs ?? []).map(id =>
           evidenceItems?.find(ev => ev.evidence_id === id),
@@ -26,6 +26,27 @@ export function TraceWithEvidence({ steps, evidenceItems, rubric }: Props) {
           rubric.iocs.find(i => i.ioc_id === id)?.name ?? id,
         );
         const hasEvidence = linked.length > 0;
+        // Compact one-line layout when there's no runtime evidence —
+        // avoids stacking empty right-columns.
+        if (!hasEvidence) {
+          return (
+            <li key={step.order} className="card p-2 flex items-center gap-3 text-[11px]">
+              <span className="text-ink-muted tabular-nums w-6">
+                {String(step.order).padStart(2, '0')}
+              </span>
+              <span className="font-mono">
+                <span className="text-accent-blue">{step.class}</span>
+                <span className="text-ink-muted">.</span>
+                <span className="text-accent-green">{step.method}()</span>
+              </span>
+              <span className="text-ink-secondary truncate flex-1">{step.reason}</span>
+              {iocNames.length > 0 && (
+                <span className="text-[9px] text-ink-muted truncate">{iocNames.join(' · ')}</span>
+              )}
+              <span className="text-[9px] tracking-widest text-ink-muted whitespace-nowrap">no runtime evidence</span>
+            </li>
+          );
+        }
         return (
           <li key={step.order} className="card p-3">
             <div className="grid grid-cols-2 gap-4">

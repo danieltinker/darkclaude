@@ -11,15 +11,15 @@ export function EscalatedByRuleBanner({ gate }: { gate: GateDecision }) {
   if (!(belowThreshold && ruleFired && gate.status === 'DYNAMIC_ANALYSIS_REQUIRED')) return null;
 
   return (
-    <div className="panel border-accent-amber/40 bg-accent-amber/5 p-4">
+    <div className="panel border-accent-violet/40 bg-accent-violet/5 p-4">
       <div className="flex items-start gap-3">
-        <span className="px-2 py-1 text-[10px] tracking-widest border border-accent-amber/40 rounded bg-accent-amber/10 text-accent-amber whitespace-nowrap">
+        <span className="px-2 py-1 text-[10px] tracking-widest border border-accent-violet/40 rounded bg-accent-violet/10 text-accent-violet whitespace-nowrap">
           ESCALATED BY OVERRIDE RULE
         </span>
         <div className="flex-1">
           <p className="text-xs text-ink-secondary leading-relaxed">
             Static candidate score{' '}
-            <span className="text-accent-amber font-semibold tabular-nums">
+            <span className="text-accent-violet font-semibold tabular-nums">
               {gate.candidate_score}
             </span>{' '}
             sits below the dynamic threshold (

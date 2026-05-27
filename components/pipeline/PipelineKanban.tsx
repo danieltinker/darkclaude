@@ -91,7 +91,7 @@ export function PipelineKanban({ cases }: { cases: QueueCase[] }) {
             </div>
             <div className="text-[10px] text-ink-muted mt-0.5">{col.caption}</div>
           </header>
-          <div className="space-y-2">
+          <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
             {grouped[col.id].length === 0 && (
               <div className="text-[10px] text-ink-muted text-center py-4">empty</div>
             )}

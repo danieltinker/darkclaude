@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { getCaseByReviewId } from '@/lib/mock-data';
 import { Panel, KV } from '@/components/chrome/Panel';
 import { StatusBadge, PriorityBadge, IocLevelBadge } from '@/components/status/StatusBadge';
+import { EscalatedByRuleBanner } from '@/components/pipeline/EscalatedByRuleBanner';
 
 export default async function MissionWorkspace({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -32,6 +33,8 @@ export default async function MissionWorkspace({ params }: { params: Promise<{ i
           <StatusBadge status={c.consumer_status} side="consumer" />
         </div>
       </div>
+
+      {c.gate_decision && <EscalatedByRuleBanner gate={c.gate_decision} />}
 
       <div className="grid grid-cols-3 gap-6">
         {/* Left: Mission brief */}

@@ -1,7 +1,11 @@
+'use client';
+
 // EvidenceBoard — a per-case gallery of typed evidence items, grouped
 // by artifact_type. Each item has an anchor (id="evidence-<id>") so
-// trace links and IOC scores can jump to it.
+// trace links and IOC scores can jump to it. Top bar filters by
+// artifact type so 20+ items stay scannable.
 
+import { useMemo, useState } from 'react';
 import type { EvidenceItem, IocRubric } from '@/lib/types';
 
 const TYPE_TONE: Record<string, string> = {
@@ -22,18 +26,45 @@ export function EvidenceBoard({
   items: EvidenceItem[];
   rubric: IocRubric;
 }) {
+  const [typeFilter, setTypeFilter] = useState<'all' | string>('all');
+
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: items.length };
+    for (const ev of items) c[ev.type] = (c[ev.type] ?? 0) + 1;
+    return c;
+  }, [items]);
+
   if (!items.length) {
     return <div className="text-xs text-ink-muted">No evidence collected yet.</div>;
   }
 
-  // Group by type
-  const groups = items.reduce<Record<string, EvidenceItem[]>>((acc, ev) => {
+  // Group by type, after filter
+  const filtered = typeFilter === 'all' ? items : items.filter(ev => ev.type === typeFilter);
+  const groups = filtered.reduce<Record<string, EvidenceItem[]>>((acc, ev) => {
     (acc[ev.type] ??= []).push(ev);
     return acc;
   }, {});
 
+  const filterKeys = ['all', ...Object.keys(counts).filter(k => k !== 'all')];
+
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap gap-1">
+        {filterKeys.map(k => (
+          <button
+            key={k}
+            onClick={() => setTypeFilter(k)}
+            className={`px-2.5 py-1 text-[10px] tracking-widest rounded border ${
+              typeFilter === k
+                ? 'border-accent-green/40 bg-accent-green/10 text-accent-green'
+                : 'border-ink-muted/30 bg-bg-card text-ink-secondary hover:text-ink-primary'
+            }`}
+          >
+            {k === 'all' ? 'ALL' : k.replace(/_/g, ' ').toUpperCase()}
+            <span className="text-ink-muted ml-1">{counts[k] ?? 0}</span>
+          </button>
+        ))}
+      </div>
       {Object.entries(groups).map(([type, group]) => (
         <div key={type}>
           <div className="flex items-baseline justify-between mb-2">
