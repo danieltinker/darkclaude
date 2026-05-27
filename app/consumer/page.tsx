@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { QUEUE_CASES } from '@/lib/mock-data';
-import { Panel } from '@/components/Panel';
-import { StatusBadge, PriorityBadge } from '@/components/StatusBadge';
+import { Panel } from '@/components/chrome/Panel';
+import { StatusBadge, PriorityBadge } from '@/components/status/StatusBadge';
 
 export default function ConsumerInbox() {
   const visibleCases = QUEUE_CASES.filter(c => c.consumer_status !== null && c.mission_package);

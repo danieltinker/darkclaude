@@ -1,10 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getCaseByReviewId, getCaseKey } from '@/lib/mock-data';
-import { Panel, KV } from '@/components/Panel';
-import { GateBadge, IocLevelBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/StatusBadge';
-import { ScoreBar } from '@/components/ScoreBar';
-import { ArtifactJsonViewer } from '@/components/ArtifactJsonViewer';
+import { getCaseByReviewId, getCaseKey, getCaseLogs } from '@/lib/mock-data';
+import { LogViewer } from '@/components/evidence/LogViewer';
+import { Panel, KV } from '@/components/chrome/Panel';
+import { GateBadge, IocLevelBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/status/StatusBadge';
+import { ScoreBar } from '@/components/score/ScoreBar';
+import { ScoreChip } from '@/components/score/ScoreNumber';
+import { ArtifactJsonViewer } from '@/components/artifact/ArtifactJsonViewer';
+import { TraceWithEvidence } from '@/components/evidence/TraceWithEvidence';
+import { EvidenceBoard } from '@/components/evidence/EvidenceBoard';
+import { EscalatedByRuleBanner } from '@/components/pipeline/EscalatedByRuleBanner';
 
 export default async function CaseDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -36,16 +41,39 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
 
       <FunnelChain c={c} />
 
+      {c.gate_decision && <EscalatedByRuleBanner gate={c.gate_decision} />}
+
       <div className="grid grid-cols-3 gap-4">
-        <ScoreCard label="static score" value={c.static_score} max={32} color="blue" />
-        <ScoreCard label="dynamic score" value={c.dynamic_score} max={32} color="amber" />
-        <ScoreCard
-          label="final score"
-          value={c.final_score}
-          max={32}
-          color="green"
-          verdict={c.report?.verdict_candidate}
-        />
+        <div className="card p-4">
+          <div className="label mb-2">static score</div>
+          <ScoreChip
+            value={c.static_score}
+            threshold={c.scorecard?.rubric_potential.threshold_for_dynamic_analysis}
+            mode="higher_is_worse"
+            label="STATIC"
+          />
+          <div className="mt-2 text-[10px] text-ink-muted">candidate evidence from rubric matching</div>
+        </div>
+        <div className="card p-4">
+          <div className="label mb-2">dynamic score</div>
+          <ScoreChip
+            value={c.dynamic_score}
+            threshold={c.scorecard?.rubric_potential.threshold_for_dynamic_analysis}
+            mode="higher_is_worse"
+            label="DYNAMIC"
+          />
+          <div className="mt-2 text-[10px] text-ink-muted">runtime-validated evidence</div>
+        </div>
+        <div className="card p-4">
+          <div className="label mb-2">final score</div>
+          <ScoreChip value={c.final_score} threshold={24} mode="higher_is_worse" label="FINAL" />
+          {c.report && (
+            <div className="mt-3 pt-3 border-t divider flex items-center justify-between">
+              <span className="text-[10px] text-ink-muted">verdict</span>
+              <VerdictBadge verdict={c.report.verdict_candidate} />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-6">
@@ -94,6 +122,30 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
               <div className="text-xs text-ink-muted">Not yet run.</div>
             )}
           </Panel>
+
+          {c.slice_verification && (
+            <Panel title="Slice Verification" section="·" subtitle="confirms the decompile produced usable output">
+              <div className="space-y-1">
+                <KV
+                  k="Status"
+                  v={
+                    <span className={c.slice_verification.status === 'success' ? 'text-accent-green' : c.slice_verification.status === 'partial' ? 'text-accent-amber' : 'text-accent-red'}>
+                      {c.slice_verification.status.toUpperCase()}
+                    </span>
+                  }
+                />
+                <KV k="Decompiler" v={c.slice_verification.decompiler} />
+                <KV k="Classes decompiled" v={<span className="tabular-nums">{c.slice_verification.classes_decompiled.toLocaleString()}</span>} />
+                <KV k="Classes failed" v={<span className="tabular-nums">{c.slice_verification.classes_failed}</span>} />
+                <KV k="Manifest parsed" v={c.slice_verification.manifest_parsed ? 'yes' : 'no'} />
+                <KV k="Resources parsed" v={c.slice_verification.resources_parsed ? 'yes' : 'no'} />
+                <KV k="Obfuscation" v={c.slice_verification.obfuscation_detected ? 'detected' : 'none'} />
+              </div>
+              {c.slice_verification.obfuscation_notes && (
+                <div className="mt-2 text-[10px] text-ink-muted">{c.slice_verification.obfuscation_notes}</div>
+              )}
+            </Panel>
+          )}
 
           <Panel title="Producer Metadata" section="04" subtitle="non-public intelligence">
             <div className="space-y-1">
@@ -409,13 +461,58 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
                   )}
                 </Panel>
 
-                <Panel title="Suggested Hooks" section="08" subtitle="passed to Consumer">
+                <Panel title="Suggested Hooks" section="08" subtitle="click any hook to see linked evidence + IOCs">
                   {c.static_triage.suggested_hooks.length ? (
                     <ul className="space-y-2 text-xs">
                       {c.static_triage.suggested_hooks.map(h => (
-                        <li key={h.target} className="card p-2">
-                          <div className="font-mono text-[11px] text-accent-green break-all">{h.target}</div>
-                          <div className="text-[10px] text-ink-muted mt-1">{h.goal}</div>
+                        <li key={h.target} className="card overflow-hidden">
+                          <details>
+                            <summary className="p-2 cursor-pointer hover:bg-bg-hover">
+                              <div className="font-mono text-[11px] text-accent-green break-all">{h.target}</div>
+                              <div className="text-[10px] text-ink-muted mt-1">{h.goal}</div>
+                            </summary>
+                            <div className="px-2 pb-2 pt-1 border-t divider/50">
+                              {(h.evidence_refs?.length ?? 0) > 0 ? (
+                                <>
+                                  <div className="text-[10px] text-ink-muted tracking-widest mb-1">CAPTURED EVIDENCE</div>
+                                  <div className="space-y-1">
+                                    {h.evidence_refs!.map(refId => {
+                                      const ev = c.evidence_package?.evidence_items.find(e => e.evidence_id === refId);
+                                      return (
+                                        <a
+                                          key={refId}
+                                          href={`#evidence-${refId}`}
+                                          className="block text-[10px] text-accent-green hover:underline"
+                                        >
+                                          {ev?.title ?? refId} →
+                                        </a>
+                                      );
+                                    })}
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="text-[10px] text-ink-muted">No evidence captured for this hook yet.</div>
+                              )}
+                              {(h.related_ioc_ids?.length ?? 0) > 0 && (
+                                <div className="mt-2">
+                                  <div className="text-[10px] text-ink-muted tracking-widest mb-1">RELATED IOCs</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {h.related_ioc_ids!.map(id => {
+                                      const ioc = c.rubric.iocs.find(i => i.ioc_id === id);
+                                      return (
+                                        <span
+                                          key={id}
+                                          className="px-1.5 py-0.5 text-[9px] tracking-widest border border-ink-muted/30 rounded bg-bg-base text-ink-secondary"
+                                        >
+                                          {ioc?.name ?? id}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </details>
                         </li>
                       ))}
                     </ul>
@@ -426,15 +523,87 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
               </div>
 
               {c.static_triage.execution_hypothesis.function_call_trace.length > 0 && (
-                <Panel title="Function Call Trace" section="09">
-                  <div className="space-y-1">
-                    {c.static_triage.execution_hypothesis.function_call_trace.map(fc => (
-                      <div key={fc.order} className="text-[11px] font-mono flex gap-2">
-                        <span className="text-ink-muted tabular-nums">{String(fc.order).padStart(2, '0')}</span>
-                        <span className="text-accent-blue">{fc.class}</span>
-                        <span className="text-ink-muted">.</span>
-                        <span className="text-accent-green">{fc.method}()</span>
-                        <span className="text-ink-muted">— {fc.reason}</span>
+                <Panel
+                  title="Function Call Trace ↔ Evidence"
+                  section="09"
+                  subtitle="every static step paired with the dynamic evidence that confirmed (or didn't confirm) it"
+                >
+                  <TraceWithEvidence
+                    steps={c.static_triage.execution_hypothesis.function_call_trace}
+                    evidenceItems={c.evidence_package?.evidence_items}
+                    rubric={c.rubric}
+                  />
+                </Panel>
+              )}
+
+              {c.evidence_package?.evidence_items && c.evidence_package.evidence_items.length > 0 && (
+                <Panel
+                  title="Evidence Board"
+                  section="10"
+                  subtitle="every artifact the Investigator produced, grouped by type — anchors linked from the trace"
+                >
+                  <EvidenceBoard items={c.evidence_package.evidence_items} rubric={c.rubric} />
+                </Panel>
+              )}
+
+              {getCaseLogs(c.case_identity.app_review_id).length > 0 && (
+                <Panel
+                  title="Runtime Logs"
+                  section="11"
+                  subtitle="HTTP Toolkit + logcat + Frida hooks · highlights with INSIGHT badge"
+                >
+                  <LogViewer rows={getCaseLogs(c.case_identity.app_review_id)} />
+                </Panel>
+              )}
+
+              {c.extracted_payloads && c.extracted_payloads.length > 0 && (
+                <Panel
+                  title="Extracted Payloads"
+                  section="12"
+                  subtitle="dropper / decrypted DEX / other binaries pulled off the device for offline forensics"
+                >
+                  <div className="space-y-3">
+                    {c.extracted_payloads.map(p => (
+                      <div key={p.payload_id} className="card p-3 border-accent-red/30">
+                        <div className="flex items-baseline justify-between mb-2">
+                          <span className="px-2 py-0.5 text-[10px] tracking-widest border border-accent-red/40 rounded bg-accent-red/10 text-accent-red font-mono">
+                            {p.artifact_type.toUpperCase()}
+                          </span>
+                          <span className="text-[10px] text-ink-muted font-mono">{p.payload_id}</span>
+                        </div>
+                        <p className="text-xs text-ink-secondary mb-3">{p.description}</p>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] font-mono">
+                          <div className="text-ink-muted">on-device path</div>
+                          <div className="text-ink-secondary text-right break-all">{p.source_path_on_device}</div>
+                          <div className="text-ink-muted">bridge artifact</div>
+                          <div className="text-ink-secondary text-right break-all">{p.bridge_artifact_path}</div>
+                          <div className="text-ink-muted">size</div>
+                          <div className="text-ink-secondary text-right tabular-nums">{p.size_bytes.toLocaleString()} bytes</div>
+                          <div className="text-ink-muted">sha256</div>
+                          <div className="text-ink-secondary text-right break-all">{p.sha256}</div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t divider/40 flex items-center justify-between">
+                          <div className="flex flex-wrap gap-1">
+                            {p.related_ioc_ids.map(id => {
+                              const ioc = c.rubric.iocs.find(i => i.ioc_id === id);
+                              return (
+                                <span
+                                  key={id}
+                                  className="px-1.5 py-0.5 text-[9px] tracking-widest border border-ink-muted/30 rounded bg-bg-base text-ink-secondary"
+                                >
+                                  {ioc?.name ?? id}
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <button
+                            disabled
+                            title="Demo only — wire to /api/payloads/:id/download in the real system"
+                            className="px-3 py-1.5 text-[10px] tracking-widest rounded border border-accent-red/40 bg-accent-red/10 text-accent-red opacity-60 cursor-not-allowed"
+                          >
+                            ⬇ DOWNLOAD
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>

@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { QUEUE_CASES } from '@/lib/mock-data';
-import { Panel } from '@/components/Panel';
-import { GateBadge, IocLevelBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/StatusBadge';
+import { Panel } from '@/components/chrome/Panel';
+import { GateBadge, IocLevelBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/status/StatusBadge';
+import { PipelineKanban } from '@/components/pipeline/PipelineKanban';
 
 export default function ProducerQueue() {
   return (
@@ -13,6 +14,10 @@ export default function ProducerQueue() {
           Queue, static funnel scorecards, gate decisions, deep inspection reports. Mission Control owns the case from lock to submission.
         </p>
       </div>
+
+      <Panel title="Pipeline" section="01.00" subtitle="every case as a card in the column matching its current stage">
+        <PipelineKanban cases={QUEUE_CASES} />
+      </Panel>
 
       <Panel title="Queue" section="01.01" subtitle={`${QUEUE_CASES.length} cases · click any row for the case file`}>
         <div className="overflow-x-auto">

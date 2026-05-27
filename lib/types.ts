@@ -71,22 +71,38 @@ export type GeoCountry = {
   reason: string;
 };
 
+export type FunctionCallTraceStep = {
+  order: number;
+  class: string;
+  method: string;
+  reason: string;
+  // (step, evidence) tuple — each trace step can link to evidence
+  // items that confirm what actually happened at that step.
+  evidence_refs?: string[];
+  // Which rubric IOCs this step is relevant to.
+  related_ioc_ids?: string[];
+};
+
+export type SuggestedHook = {
+  target: string;
+  goal: string;
+  // When a hook is clicked, point to evidence it actually produced
+  // and/or to the related rubric IOC(s) it informs.
+  evidence_refs?: string[];
+  related_ioc_ids?: string[];
+};
+
 export type StaticTriage = {
   candidate_score: number;
   top_ioc_candidates: IocCandidateScore[];
   execution_hypothesis: {
     summary: string;
     suspected_flow: string[];
-    function_call_trace: Array<{
-      order: number;
-      class: string;
-      method: string;
-      reason: string;
-    }>;
+    function_call_trace: FunctionCallTraceStep[];
   };
   suspicious_urls: Array<{ url: string; severity: 'low' | 'medium' | 'high'; reason: string }>;
   suspicious_native_files: Array<{ path: string; severity: 'low' | 'medium' | 'high'; reason: string }>;
-  suggested_hooks: Array<{ target: string; goal: string }>;
+  suggested_hooks: SuggestedHook[];
 };
 
 export type ProducerMetadata = {
@@ -251,7 +267,7 @@ export type ConsumerStatus =
   | 'EVIDENCE_COLLECTED'
   | 'DYNAMIC_SCORE_READY'
   | 'EVIDENCE_PACKAGE_READY'
-  | 'EVIDENCE_PACKAGE_SENT'
+  | 'EVIDENCE_RETURNED'
   | 'DONE';
 
 // =====================================================================
@@ -381,6 +397,53 @@ export type StaticSliceSummary = {
   }>;
 };
 
+// Slice verification — gate before scoring. Confirms decompile produced
+// usable output so the scorecard is grounded in real evidence.
+export type SliceVerification = {
+  status: 'success' | 'partial' | 'failed';
+  decompiler: 'jadx' | 'apktool' | 'ghidra' | 'multi';
+  classes_decompiled: number;
+  classes_failed: number;
+  manifest_parsed: boolean;
+  resources_parsed: boolean;
+  obfuscation_detected: boolean;
+  obfuscation_notes?: string;
+  errors: string[];
+  artifact_refs: string[];
+};
+
+// Per-task analytics emitted by every worker run.
+export type WorkerAnalytics = {
+  task_id: string;
+  task_type: string;
+  agent_id: string;
+  case_key: string;
+  status: 'completed' | 'partial' | 'blocked' | 'failed';
+  started_at: string;
+  completed_at: string;
+  duration_ms: number;
+  tokens_in: number;
+  tokens_out: number;
+  total_cost_usd?: number;
+  notes?: string;
+};
+
+// Extracted payload — when dynamic captures a dropper / decrypted DEX /
+// any artifact off the device that the human reviewer may want to
+// download for offline forensics.
+export type ExtractedPayload = {
+  payload_id: string;
+  case_identity: CaseIdentity;
+  artifact_type: 'dex' | 'so' | 'apk' | 'jar' | 'binary' | 'config' | 'other';
+  source_path_on_device: string;
+  bridge_artifact_path: string;
+  sha256: string;
+  size_bytes: number;
+  description: string;
+  extracted_during_experiment_id?: number;
+  related_ioc_ids: string[];
+};
+
 export type StaticFunnelScorecard = {
   schema_version: '1.0.0';
   event_type: 'StaticFunnelScorecard';
@@ -478,6 +541,7 @@ export type QueueCase = {
   metadata_closure_report?: MetadataClosureReport;
   // Static funnel (only present if metadata gate routed to static)
   install_verification?: InstallVerification;
+  slice_verification?: SliceVerification;
   static_slice_summary?: StaticSliceSummary;
   scorecard?: StaticFunnelScorecard;
   gate_decision?: GateDecision;
@@ -487,7 +551,9 @@ export type QueueCase = {
   mission_package?: ReviewMissionPackage;
   evidence_package?: DynamicEvidencePackage;
   exploratory_finding?: ExploratoryFinding;
+  extracted_payloads?: ExtractedPayload[];
   report?: DeepInspectionReport;
+  worker_analytics?: WorkerAnalytics[];
 };
 
 // PixelBridge append-only event log

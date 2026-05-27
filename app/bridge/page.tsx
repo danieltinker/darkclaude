@@ -1,5 +1,5 @@
 import { BRIDGE_EVENTS } from '@/lib/mock-data';
-import { Panel, KV } from '@/components/Panel';
+import { Panel, KV } from '@/components/chrome/Panel';
 
 const TYPE_COLORS: Record<string, string> = {
   QueueLockClaimed: 'text-ink-secondary border-ink-muted/40',

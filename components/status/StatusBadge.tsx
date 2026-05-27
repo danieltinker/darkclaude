@@ -36,7 +36,7 @@ const CONSUMER_COLORS: Record<ConsumerStatus, string> = {
   EVIDENCE_COLLECTED: 'bg-accent-green/10 text-accent-green border-accent-green/30',
   DYNAMIC_SCORE_READY: 'bg-accent-green/10 text-accent-green border-accent-green/30',
   EVIDENCE_PACKAGE_READY: 'bg-accent-green/15 text-accent-green border-accent-green/40',
-  EVIDENCE_PACKAGE_SENT: 'bg-accent-green/20 text-accent-green border-accent-green/50',
+  EVIDENCE_RETURNED: 'bg-accent-green/20 text-accent-green border-accent-green/50',
   DONE: 'bg-ink-muted/20 text-ink-secondary border-ink-muted/40',
 };
 

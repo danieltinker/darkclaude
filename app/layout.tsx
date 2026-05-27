@@ -1,6 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
-import { Nav } from '@/components/Nav';
+import { Nav } from '@/components/chrome/Nav';
 
 export const metadata: Metadata = {
   title: 'darkclaude // malware-review pipeline',

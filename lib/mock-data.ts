@@ -165,6 +165,58 @@ function makeMetadataGateDecision(
   };
 }
 
+function makeSliceVerification(success = true): import('./types').SliceVerification {
+  if (!success) {
+    return {
+      status: 'failed',
+      decompiler: 'jadx',
+      classes_decompiled: 0,
+      classes_failed: 0,
+      manifest_parsed: false,
+      resources_parsed: false,
+      obfuscation_detected: false,
+      errors: ['jadx exited with non-zero status'],
+      artifact_refs: [],
+    };
+  }
+  return {
+    status: 'success',
+    decompiler: 'jadx',
+    classes_decompiled: 1284,
+    classes_failed: 0,
+    manifest_parsed: true,
+    resources_parsed: true,
+    obfuscation_detected: true,
+    obfuscation_notes: 'class names obfuscated; behavioral patterns intact',
+    errors: [],
+    artifact_refs: ['artifacts/static/slice/jadx_output.log'],
+  };
+}
+
+function makeAnalytics(case_key: string, runs: Array<{ task: string; agent: string; ms: number; tokensIn: number; tokensOut: number; status?: 'completed' | 'partial' | 'failed' }>): import('./types').WorkerAnalytics[] {
+  const baseTime = new Date('2026-05-27T08:00:00Z').getTime();
+  let cursor = 0;
+  return runs.map((r, i) => {
+    const started = new Date(baseTime + cursor).toISOString();
+    cursor += r.ms;
+    const completed = new Date(baseTime + cursor).toISOString();
+    cursor += 500; // gap between tasks
+    return {
+      task_id: `${case_key}_task_${String(i + 1).padStart(2, '0')}`,
+      task_type: r.task,
+      agent_id: r.agent,
+      case_key,
+      status: r.status ?? 'completed',
+      started_at: started,
+      completed_at: completed,
+      duration_ms: r.ms,
+      tokens_in: r.tokensIn,
+      tokens_out: r.tokensOut,
+      total_cost_usd: Math.round(((r.tokensIn + r.tokensOut) * 0.000003) * 1000) / 1000,
+    };
+  });
+}
+
 function makeInstallVerification(success = true): InstallVerification {
   if (!success) {
     return {
@@ -329,9 +381,9 @@ const GRC_001_MISSION: ReviewMissionPackage = {
       ],
       function_call_trace: [
         { order: 1, class: 'com.adsync.MainActivity', method: 'onCreate', reason: 'Entry point' },
-        { order: 2, class: 'com.adsync.net.C2Client', method: 'fetchOffer', reason: 'Issues remote config request' },
-        { order: 3, class: 'com.adsync.net.OfferParser', method: 'extractUrl', reason: 'Parses C2 response' },
-        { order: 4, class: 'com.adsync.ui.HiddenWebViewController', method: 'load', reason: 'Suspected payload sink' },
+        { order: 2, class: 'com.adsync.net.C2Client', method: 'fetchOffer', reason: 'Issues remote config request', evidence_refs: ['ev_c2_capture'], related_ioc_ids: ['rw_c2_endpoint'] },
+        { order: 3, class: 'com.adsync.net.OfferParser', method: 'extractUrl', reason: 'Parses C2 response', related_ioc_ids: ['rw_c2_endpoint', 'rw_remote_controlled_webview'] },
+        { order: 4, class: 'com.adsync.ui.HiddenWebViewController', method: 'load', reason: 'Suspected payload sink', evidence_refs: ['ev_webview_hook', 'ev_screenshot'], related_ioc_ids: ['rw_remote_controlled_webview', 'rw_hidden_webview'] },
       ],
     },
     suspicious_urls: [
@@ -339,9 +391,9 @@ const GRC_001_MISSION: ReviewMissionPackage = {
     ],
     suspicious_native_files: [],
     suggested_hooks: [
-      { target: 'android.webkit.WebView.loadUrl', goal: 'Capture WebView destinations at runtime' },
-      { target: 'com.adsync.net.C2Client.fetchOffer', goal: 'Capture C2 response body' },
-      { target: 'com.adsync.net.OfferParser.extractUrl', goal: 'Capture parsed destination URL' },
+      { target: 'android.webkit.WebView.loadUrl', goal: 'Capture WebView destinations at runtime', evidence_refs: ['ev_webview_hook'], related_ioc_ids: ['rw_remote_controlled_webview'] },
+      { target: 'com.adsync.net.C2Client.fetchOffer', goal: 'Capture C2 response body', evidence_refs: ['ev_c2_capture'], related_ioc_ids: ['rw_c2_endpoint'] },
+      { target: 'com.adsync.net.OfferParser.extractUrl', goal: 'Capture parsed destination URL', related_ioc_ids: ['rw_c2_endpoint'] },
     ],
   },
   hypotheses: [
@@ -1320,7 +1372,7 @@ export const QUEUE_CASES: QueueCase[] = [
   {
     case_identity: GRC_001_IDENTITY,
     producer_status: 'DEEP_REPORT_READY',
-    consumer_status: 'EVIDENCE_PACKAGE_SENT',
+    consumer_status: 'EVIDENCE_RETURNED',
     priority: 'high',
     static_score: GRC_001_REPORT.static_score,
     dynamic_score: GRC_001_REPORT.dynamic_score,
@@ -1331,6 +1383,7 @@ export const QUEUE_CASES: QueueCase[] = [
     metadata_scorecard: GRC_001_METADATA_SCORECARD,
     metadata_gate: GRC_001_METADATA_GATE,
     install_verification: GRC_001_INSTALL,
+    slice_verification: makeSliceVerification(true),
     static_slice_summary: GRC_001_SLICE,
     scorecard: GRC_001_SCORECARD,
     gate_decision: GRC_001_GATE,
@@ -1338,6 +1391,31 @@ export const QUEUE_CASES: QueueCase[] = [
     mission_package: GRC_001_MISSION,
     evidence_package: GRC_001_EVIDENCE,
     report: GRC_001_REPORT,
+    extracted_payloads: [
+      {
+        payload_id: 'payload_grc001_dropper_01',
+        case_identity: GRC_001_IDENTITY,
+        artifact_type: 'dex',
+        source_path_on_device: '/data/data/com.adsync.dailyoffers/files/.cache/d_2c.bin',
+        bridge_artifact_path: 'artifacts/dynamic/review_2026_000143/payloads/d_2c_decrypted.dex',
+        sha256: 'sha256:dexdroppergrc001payload0000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        size_bytes: 84_320,
+        description: 'Decrypted DEX file pulled from app private storage after first WebView trigger. Static decryption stub matches the runtime payload.',
+        extracted_during_experiment_id: 3,
+        related_ioc_ids: ['rw_remote_controlled_webview', 'rw_hidden_webview'],
+      },
+    ],
+    worker_analytics: makeAnalytics(`${GRC_001_IDENTITY.app_review_id}/${GRC_001_IDENTITY.package_name}`, [
+      { task: 'producer.metadata_score',           agent: 'MetadataScoutWorker',         ms: 1840,  tokensIn: 820,  tokensOut: 280 },
+      { task: 'producer.install_verify',           agent: 'StaticFunnelWorker',          ms: 6400,  tokensIn: 360,  tokensOut: 110 },
+      { task: 'producer.slice_verify',             agent: 'StaticFunnelWorker',          ms: 12_300, tokensIn: 540,  tokensOut: 220 },
+      { task: 'producer.static_slice',             agent: 'StaticFunnelWorker',          ms: 18_700, tokensIn: 2_950, tokensOut: 1_200 },
+      { task: 'producer.generate_static_scorecard',agent: 'StaticFunnelWorker',          ms: 9_400,  tokensIn: 3_800, tokensOut: 1_840 },
+      { task: 'producer.decide_static_gate',       agent: 'StaticGateDecisionWorker',    ms: 480,    tokensIn: 920,  tokensOut: 140 },
+      { task: 'producer.build_dynamic_mission',    agent: 'ProducerStaticTriageAgent',   ms: 11_600, tokensIn: 4_280, tokensOut: 2_400 },
+      { task: 'consumer.collect_dynamic_evidence', agent: 'ConsumerDynamicEvidenceAgent',ms: 38 * 60 * 1000, tokensIn: 12_400, tokensOut: 5_960 },
+      { task: 'mission_control.deep_report',       agent: 'MissionControlReportWorker',  ms: 14_800, tokensIn: 5_400, tokensOut: 3_120 },
+    ]),
   },
   // Case 2 (DYNAMIC IN PROGRESS): GRC-002 — funnel → gate → dynamic running
   {
@@ -1381,7 +1459,7 @@ export const QUEUE_CASES: QueueCase[] = [
   {
     case_identity: FP_IDENTITY,
     producer_status: 'FALSE_POSITIVE_CLOSED',
-    consumer_status: 'EVIDENCE_PACKAGE_SENT',
+    consumer_status: 'EVIDENCE_RETURNED',
     priority: 'medium',
     static_score: sumIocPoints(FP_SCORECARD.candidate_iocs),
     dynamic_score: 0,
@@ -1403,7 +1481,7 @@ export const QUEUE_CASES: QueueCase[] = [
   {
     case_identity: EXPL_IDENTITY,
     producer_status: 'EXPLORATORY_FINDING_READY',
-    consumer_status: 'EVIDENCE_PACKAGE_SENT',
+    consumer_status: 'EVIDENCE_RETURNED',
     priority: 'high',
     static_score: sumIocPoints(EXPL_SCORECARD.candidate_iocs),
     dynamic_score: 8,
@@ -1594,4 +1672,38 @@ export function getCaseByReviewId(id: string): QueueCase | undefined {
 
 export function getCaseKey(c: QueueCase): string {
   return caseKey(c);
+}
+
+// Aggregate worker analytics across all cases — feeds the /agents
+// analytics tab.
+export function allWorkerAnalytics() {
+  const rows: NonNullable<QueueCase['worker_analytics']>[number][] = [];
+  for (const c of QUEUE_CASES) {
+    if (c.worker_analytics) rows.push(...c.worker_analytics);
+  }
+  return rows;
+}
+
+// Synthetic log feed for the case file LogViewer.
+export function getCaseLogs(reviewId: string): Array<{
+  ts: string;
+  channel: 'network' | 'logcat' | 'hook';
+  level?: 'info' | 'warn' | 'error';
+  text: string;
+  insight?: { ioc_id: string; severity: 'low' | 'medium' | 'high'; note: string };
+}> {
+  if (reviewId !== 'review_2026_000143') return [];
+  return [
+    { ts: '08:15:01.230', channel: 'logcat',  level: 'info', text: 'ActivityManager: START u0 {com.adsync.dailyoffers/.MainActivity} from uid 2000' },
+    { ts: '08:15:01.812', channel: 'logcat',  level: 'info', text: 'MainActivity.onCreate: launching' },
+    { ts: '08:15:02.041', channel: 'hook',    level: 'info', text: 'C2Client.fetchOffer() called — preparing POST to /o/v3' },
+    { ts: '08:15:02.219', channel: 'network', level: 'info', text: 'POST https://api.adsync-cdn.net/o/v3  status 200  88 ms', insight: { ioc_id: 'ev_c2_capture', severity: 'high', note: 'C2 endpoint returned offer_url field' } },
+    { ts: '08:15:02.232', channel: 'hook',    level: 'info', text: 'OfferParser.extractUrl(): https://promo.luckydeals.br/offer/9921' },
+    { ts: '08:15:02.318', channel: 'hook',    level: 'warn', text: 'WebView.loadUrl(https://promo.luckydeals.br/offer/9921)', insight: { ioc_id: 'ev_webview_hook', severity: 'high', note: 'WebView destination matches C2 response — remote-controlled flow confirmed' } },
+    { ts: '08:15:02.401', channel: 'logcat',  level: 'info', text: 'HiddenWebViewController: attaching view to overlay container, visibility=GONE' },
+    { ts: '08:15:02.690', channel: 'network', level: 'info', text: 'GET https://promo.luckydeals.br/offer/9921  status 200  342 ms (text/html)' },
+    { ts: '08:15:03.117', channel: 'logcat',  level: 'warn', text: 'WebView: rendered third-party content outside primary UI bounds', insight: { ioc_id: 'ev_screenshot', severity: 'high', note: 'Hidden WebView is rendering the C2 destination — screenshot evidence captured' } },
+    { ts: '08:15:04.022', channel: 'hook',    level: 'info', text: 'Frida snapshot: writing screenshots/webview_payload.png' },
+    { ts: '08:15:04.100', channel: 'logcat',  level: 'info', text: 'Investigator: stop_reason = strong_runtime_evidence_found' },
+  ];
 }

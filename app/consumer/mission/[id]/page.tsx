@@ -1,8 +1,8 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getCaseByReviewId } from '@/lib/mock-data';
-import { Panel, KV } from '@/components/Panel';
-import { StatusBadge, PriorityBadge, IocLevelBadge } from '@/components/StatusBadge';
+import { Panel, KV } from '@/components/chrome/Panel';
+import { StatusBadge, PriorityBadge, IocLevelBadge } from '@/components/status/StatusBadge';
 
 export default async function MissionWorkspace({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

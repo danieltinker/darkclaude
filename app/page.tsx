@@ -1,13 +1,13 @@
 import Link from 'next/link';
 import { QUEUE_CASES } from '@/lib/mock-data';
 import { RISKWARE_GATE_POLICY } from '@/lib/rubrics';
-import { Panel } from '@/components/Panel';
-import { GateBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/StatusBadge';
+import { Panel } from '@/components/chrome/Panel';
+import { GateBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/status/StatusBadge';
 
 export default function Home() {
   const closedEarly = QUEUE_CASES.filter(c => c.producer_status === 'STATIC_INSUFFICIENT_CLOSED').length;
   const dynamicActive = QUEUE_CASES.filter(
-    c => c.consumer_status && c.consumer_status !== 'EVIDENCE_PACKAGE_SENT' && c.consumer_status !== 'DONE',
+    c => c.consumer_status && c.consumer_status !== 'EVIDENCE_RETURNED' && c.consumer_status !== 'DONE',
   ).length;
   const reportsReady = QUEUE_CASES.filter(c => c.report).length;
 

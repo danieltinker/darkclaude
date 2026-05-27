@@ -1,9 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getCaseByReviewId } from '@/lib/mock-data';
-import { Panel, KV } from '@/components/Panel';
-import { GateBadge, IocLevelBadge, VerdictBadge } from '@/components/StatusBadge';
-import { ScoreBar } from '@/components/ScoreBar';
+import { Panel, KV } from '@/components/chrome/Panel';
+import { GateBadge, IocLevelBadge, VerdictBadge } from '@/components/status/StatusBadge';
+import { ScoreBar } from '@/components/score/ScoreBar';
 
 export default async function ReportPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
