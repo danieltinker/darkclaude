@@ -171,7 +171,7 @@ function Hero() {
           A malware-review assembly line that decides which apps deserve deep investigation
           — and writes the report when they do.
         </h1>
-        <p className="text-sm text-ink-secondary leading-relaxed">
+        <p className="text-sm text-ink-secondary leading-relaxed mb-6">
           Most apps in the queue don't have enough suspicious signals to justify expensive runtime analysis.
           A <span className="text-accent-blue">static funnel</span> reads each app fast, gives it a score,
           and a deterministic <span className="text-accent-amber">gate</span> decides:
@@ -179,6 +179,12 @@ function Hero() {
           <span className="text-accent-violet">dynamic lab</span> for runtime evidence. The final{' '}
           <span className="text-accent-green">deep inspection report</span> goes to a human reviewer.
         </p>
+        <Link
+          href="/run"
+          className="inline-flex items-center gap-2 px-4 py-2.5 text-sm tracking-widest rounded border border-accent-green/40 bg-accent-green/10 text-accent-green hover:brightness-125 transition-all"
+        >
+          ▶ RUN A CASE — WATCH THE PIPELINE
+        </Link>
       </div>
     </div>
   );

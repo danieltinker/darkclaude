@@ -4,10 +4,11 @@ import { usePathname } from 'next/navigation';
 
 const LINKS = [
   { href: '/', label: 'overview', section: '00' },
-  { href: '/producer', label: 'producer', section: '01' },
-  { href: '/bridge', label: 'pixelbridge', section: '02' },
-  { href: '/consumer', label: 'consumer', section: '03' },
-  { href: '/agents', label: 'agents', section: '04' },
+  { href: '/run', label: 'run a case', section: '01' },
+  { href: '/producer', label: 'producer', section: '02' },
+  { href: '/bridge', label: 'pixelbridge', section: '03' },
+  { href: '/consumer', label: 'consumer', section: '04' },
+  { href: '/agents', label: 'agents', section: '05' },
 ];
 
 export function Nav() {
