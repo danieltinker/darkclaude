@@ -60,8 +60,11 @@ function pickStrongest(scores: IocCandidateScore[]): IocCandidateScore | undefin
   return scores.reduce((best, cur) => (LEVEL_RANK[cur.level] > LEVEL_RANK[best.level] ? cur : best));
 }
 
+// Verdict thresholds. Riskware = 12–27, malicious = 28+. GRC-001
+// canonically lands in riskware (final=24) and stays there until human
+// review escalates, matching the README + golden-case category.
 export function verdictFromScore(score: number): 'malicious' | 'riskware' | 'benign' | 'inconclusive' {
-  if (score >= 24) return 'malicious';
+  if (score >= 28) return 'malicious';
   if (score >= 12) return 'riskware';
   if (score >= 4) return 'inconclusive';
   return 'benign';

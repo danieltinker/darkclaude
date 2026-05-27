@@ -149,7 +149,7 @@ function makeMetadataGateDecision(
   meta: ProducerMetadata,
 ): MetadataGateDecision {
   const triggered: string[] = [];
-  if (meta.prior_flags.length > 0) triggered.push('developer_prior_flags_present');
+  if (meta.prior_flags.length > 0) triggered.push('developer_prior_flags');
   const proceed = sc.requires_static_analysis || triggered.length > 0;
   return {
     case_identity,
@@ -1483,9 +1483,12 @@ export const QUEUE_CASES: QueueCase[] = [
     producer_status: 'EXPLORATORY_FINDING_READY',
     consumer_status: 'EVIDENCE_RETURNED',
     priority: 'high',
+    // Static IOCs (rw_remote_controlled_webview medium, rw_c2_endpoint
+    // medium = 4+4) + dynamic unanticipated IOC (strong = 8). Distinct
+    // ioc_ids, so reconciliation sums to 16 per scoring rules.
     static_score: sumIocPoints(EXPL_SCORECARD.candidate_iocs),
     dynamic_score: 8,
-    final_score: 8,
+    final_score: sumIocPoints(EXPL_SCORECARD.candidate_iocs) + 8,
     metadata: EXPL_META,
     rubric: RISKWARE_RUBRIC,
     queue_lock: makeLock(EXPL_IDENTITY.app_review_id, EXPL_IDENTITY.queue_item_id),
@@ -1549,7 +1552,7 @@ export const QUEUE_CASES: QueueCase[] = [
     producer_status: 'STATIC_SCORECARD_READY',
     consumer_status: null,
     priority: 'critical',
-    static_score: 12,
+    static_score: 8,
     dynamic_score: 0,
     final_score: 0,
     metadata: meta,
@@ -1558,6 +1561,7 @@ export const QUEUE_CASES: QueueCase[] = [
     metadata_scorecard: sc,
     metadata_gate: gate,
     install_verification: makeInstallVerification(true),
+    slice_verification: makeSliceVerification(true),
     static_slice_summary: {
       status: 'completed',
       decompile_status: 'success',
@@ -1575,9 +1579,42 @@ export const QUEUE_CASES: QueueCase[] = [
         },
       ],
     },
-    scorecard: undefined, // illustrate a case where scorecard is generated but gate not yet applied
+    // Scorecard generated, awaiting gate — demonstrates the moment
+    // right after the Triager finishes scoring.
+    scorecard: {
+      schema_version: '1.0.0',
+      event_type: 'StaticFunnelScorecard',
+      message_id: 'msg_coinmint_scorecard_01',
+      created_at: '2026-05-27T09:30:00Z',
+      source_agent: 'StaticFunnelWorker',
+      case_identity: id,
+      install_verification: makeInstallVerification(true),
+      static_slice: {
+        status: 'completed',
+        decompile_status: 'success',
+        manifest_parsed: true,
+        native_files_detected: false,
+        network_strings_detected: true,
+        webview_usage_detected: true,
+        candidate_flows: [],
+      },
+      rubric_potential: {
+        candidate_score: 8,
+        threshold_for_dynamic_analysis: 8,
+        requires_dynamic_analysis: true,
+        reason: 'Two medium IOCs — reward-server URL flow + remote-controlled WebView — reach the dynamic threshold exactly.',
+      },
+      candidate_iocs: [
+        { ioc_id: 'rw_c2_endpoint', level: 'medium', confidence: 0.78, reason: 'Encrypted endpoint resolves at runtime; controls reward payout destination.' },
+        { ioc_id: 'rw_remote_controlled_webview', level: 'medium', confidence: 0.72, reason: 'RewardsController.openWindow consumes server URL field.' },
+      ],
+      missing_rubric_signals: [
+        { ioc_id: 'rw_hidden_webview', ioc_name: 'Hidden or misleading WebView behavior', reason: 'No hidden-WebView pattern detected in static slice.' },
+      ],
+      checksum: 'sha256:coinmintscorecardrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr',
+    },
     static_triage: {
-      candidate_score: 12,
+      candidate_score: 8,
       top_ioc_candidates: [
         { ioc_id: 'rw_c2_endpoint', level: 'medium', confidence: 0.78, reason: 'Encrypted endpoint resolves at runtime; controls reward payout destination.' },
         { ioc_id: 'rw_remote_controlled_webview', level: 'medium', confidence: 0.72, reason: 'RewardsController.openWindow consumes server URL field.' },
@@ -1690,19 +1727,19 @@ export function getCaseLogs(reviewId: string): Array<{
   channel: 'network' | 'logcat' | 'hook';
   level?: 'info' | 'warn' | 'error';
   text: string;
-  insight?: { ioc_id: string; severity: 'low' | 'medium' | 'high'; note: string };
+  insight?: { evidence_id: string; severity: 'low' | 'medium' | 'high'; note: string };
 }> {
   if (reviewId !== 'review_2026_000143') return [];
   return [
     { ts: '08:15:01.230', channel: 'logcat',  level: 'info', text: 'ActivityManager: START u0 {com.adsync.dailyoffers/.MainActivity} from uid 2000' },
     { ts: '08:15:01.812', channel: 'logcat',  level: 'info', text: 'MainActivity.onCreate: launching' },
     { ts: '08:15:02.041', channel: 'hook',    level: 'info', text: 'C2Client.fetchOffer() called — preparing POST to /o/v3' },
-    { ts: '08:15:02.219', channel: 'network', level: 'info', text: 'POST https://api.adsync-cdn.net/o/v3  status 200  88 ms', insight: { ioc_id: 'ev_c2_capture', severity: 'high', note: 'C2 endpoint returned offer_url field' } },
+    { ts: '08:15:02.219', channel: 'network', level: 'info', text: 'POST https://api.adsync-cdn.net/o/v3  status 200  88 ms', insight: { evidence_id: 'ev_c2_capture', severity: 'high', note: 'C2 endpoint returned offer_url field' } },
     { ts: '08:15:02.232', channel: 'hook',    level: 'info', text: 'OfferParser.extractUrl(): https://promo.luckydeals.br/offer/9921' },
-    { ts: '08:15:02.318', channel: 'hook',    level: 'warn', text: 'WebView.loadUrl(https://promo.luckydeals.br/offer/9921)', insight: { ioc_id: 'ev_webview_hook', severity: 'high', note: 'WebView destination matches C2 response — remote-controlled flow confirmed' } },
+    { ts: '08:15:02.318', channel: 'hook',    level: 'warn', text: 'WebView.loadUrl(https://promo.luckydeals.br/offer/9921)', insight: { evidence_id: 'ev_webview_hook', severity: 'high', note: 'WebView destination matches C2 response — remote-controlled flow confirmed' } },
     { ts: '08:15:02.401', channel: 'logcat',  level: 'info', text: 'HiddenWebViewController: attaching view to overlay container, visibility=GONE' },
     { ts: '08:15:02.690', channel: 'network', level: 'info', text: 'GET https://promo.luckydeals.br/offer/9921  status 200  342 ms (text/html)' },
-    { ts: '08:15:03.117', channel: 'logcat',  level: 'warn', text: 'WebView: rendered third-party content outside primary UI bounds', insight: { ioc_id: 'ev_screenshot', severity: 'high', note: 'Hidden WebView is rendering the C2 destination — screenshot evidence captured' } },
+    { ts: '08:15:03.117', channel: 'logcat',  level: 'warn', text: 'WebView: rendered third-party content outside primary UI bounds', insight: { evidence_id: 'ev_screenshot', severity: 'high', note: 'Hidden WebView is rendering the C2 destination — screenshot evidence captured' } },
     { ts: '08:15:04.022', channel: 'hook',    level: 'info', text: 'Frida snapshot: writing screenshots/webview_payload.png' },
     { ts: '08:15:04.100', channel: 'logcat',  level: 'info', text: 'Investigator: stop_reason = strong_runtime_evidence_found' },
   ];

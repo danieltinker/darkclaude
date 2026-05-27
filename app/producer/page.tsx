@@ -8,7 +8,7 @@ export default function ProducerQueue() {
   return (
     <div className="space-y-6">
       <div>
-        <div className="text-[10px] text-ink-muted tracking-[0.3em] mb-1">// 01 MISSION CONTROL</div>
+        <div className="text-[10px] text-ink-muted tracking-[0.3em] mb-1">// 02 MISSION CONTROL</div>
         <h1 className="text-2xl font-semibold">Mission Command</h1>
         <p className="text-sm text-ink-secondary mt-1">
           Queue, static funnel scorecards, gate decisions, deep inspection reports. Mission Control owns the case from lock to submission.
@@ -39,7 +39,7 @@ export default function ProducerQueue() {
               {QUEUE_CASES.map(c => (
                 <tr
                   key={c.case_identity.app_review_id}
-                  className="border-b divider/40 hover:bg-bg-card transition-colors"
+                  className="border-b border-edge/40 hover:bg-bg-card transition-colors"
                 >
                   <td className="py-3 pr-3">
                     <Link href={`/producer/case/${c.case_identity.app_review_id}`}>

@@ -316,20 +316,20 @@ function buildStaticClosureScenario(): Scenario {
 }
 
 // =====================================================================
-// SCENARIO 3.1: MALICIOUS — Daily Offers Hub
+// SCENARIO 3.1: RISKWARE CONFIRMED — Daily Offers Hub
 // =====================================================================
 
 function buildMaliciousScenario(): Scenario {
   const c = getCaseByReviewId('review_2026_000143')!;
   return {
     id: 'malicious_daily_offers',
-    title: '3.1. Dynamic confirms — MALICIOUS',
+    title: '3.1. Dynamic confirms — RISKWARE',
     subtitle: 'Daily Offers Hub: C2 returns URL, app loads it in a hidden WebView. Strong evidence captured at runtime.',
     case_id: c.case_identity.app_review_id,
     outcome: 'malicious',
     final_link: `/producer/report/${c.case_identity.app_review_id}`,
     final_link_label: 'Open the deep inspection report',
-    outcome_label: 'MALICIOUS · AWAITING HUMAN REVIEW',
+    outcome_label: 'RISKWARE CONFIRMED · AWAITING HUMAN REVIEW',
     outcome_tone: 'red',
     stages: [
       { id: 'lock', persona: 'queue', label: 'Locking the app from the queue', sub: 'lease acquired', duration_ms: 600, artifact: lockArtifact(c.queue_lock, c.case_identity.app_name, c.case_identity.package_name, c.case_identity.version_code, c.case_identity.category_name) },
@@ -341,7 +341,7 @@ function buildMaliciousScenario(): Scenario {
       { id: 'gate', persona: 'gatekeeper', label: 'Applying static-gate policy', sub: 'score ≥ threshold AND force-rule triggered', duration_ms: 1300, flavor: 'gate_decision', artifact: gateArtifact(c.gate_decision!) },
       { id: 'mission', persona: 'planner', label: 'Building the dynamic mission package', sub: '1 hypothesis · 2 VPN countries · 45m budget · 3 hooks', duration_ms: 1300, artifact: missionArtifact(c.mission_package!) },
       { id: 'evidence', persona: 'investigator', label: 'Running experiments and capturing evidence', sub: 'C2 + WebView + screenshot captured', duration_ms: 1500, artifact: evidenceArtifact(c.evidence_package!) },
-      { id: 'report', persona: 'reporter', label: 'Reconciling and drafting deep inspection report', sub: 'final score 24 · MALICIOUS · awaiting human review', duration_ms: 1300, flavor: 'verdict', artifact: deepReportArtifact(c.report!) },
+      { id: 'report', persona: 'reporter', label: 'Reconciling and drafting deep inspection report', sub: 'final score 24 · RISKWARE · awaiting human review', duration_ms: 1300, flavor: 'verdict', artifact: deepReportArtifact(c.report!) },
     ],
   };
 }

@@ -9,7 +9,7 @@ export default function ConsumerInbox() {
   return (
     <div className="space-y-6">
       <div>
-        <div className="text-[10px] text-ink-muted tracking-[0.3em] mb-1">// 03 CONSUMER</div>
+        <div className="text-[10px] text-ink-muted tracking-[0.3em] mb-1">// 04 CONSUMER</div>
         <h1 className="text-2xl font-semibold">Evidence Lab</h1>
         <p className="text-sm text-ink-secondary mt-1">
           Mission inbox, experiments, and runtime evidence. Consumer only sees what PixelBridge delivers.

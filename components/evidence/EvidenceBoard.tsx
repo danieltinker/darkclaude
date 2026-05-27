@@ -57,7 +57,7 @@ export function EvidenceBoard({
                 </div>
                 <div className="text-sm font-semibold mb-1">{ev.title}</div>
                 <p className="text-xs text-ink-secondary leading-relaxed">{ev.description}</p>
-                <div className="mt-3 pt-2 border-t divider/40 flex items-center justify-between text-[10px]">
+                <div className="mt-3 pt-2 border-t border-edge/40 flex items-center justify-between text-[10px]">
                   <div className="flex flex-wrap gap-1 flex-1">
                     {ev.ioc_ids.map(id => {
                       const ioc = rubric.iocs.find(i => i.ioc_id === id);

@@ -22,7 +22,7 @@ export function AgentsClient({ prompts, personas }: AgentsClientProps) {
   return (
     <div className="space-y-6">
       <div>
-        <div className="text-[10px] text-ink-muted tracking-[0.3em] mb-1">// 04 AGENTS</div>
+        <div className="text-[10px] text-ink-muted tracking-[0.3em] mb-1">// 05 AGENTS</div>
         <h1 className="text-2xl font-semibold">Workers in the pipeline</h1>
         <p className="text-sm text-ink-secondary mt-2 max-w-3xl">
           Every agent is a swappable "black box" that plugs into a stable contract — the system doesn't care

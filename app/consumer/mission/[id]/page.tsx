@@ -164,7 +164,7 @@ export default async function MissionWorkspace({ params }: { params: Promise<{ i
                         </ul>
                       </div>
                     )}
-                    <div className="mt-3 pt-2 border-t divider/40 text-[10px] text-ink-muted">
+                    <div className="mt-3 pt-2 border-t border-edge/40 text-[10px] text-ink-muted">
                       next: <span className="text-ink-secondary">{x.next_decision}</span>
                     </div>
                   </li>
@@ -206,7 +206,7 @@ export default async function MissionWorkspace({ params }: { params: Promise<{ i
                         <div className="text-sm font-semibold tabular-nums">{(ev.confidence * 100).toFixed(0)}%</div>
                       </div>
                     </div>
-                    <div className="mt-3 pt-3 border-t divider/40 flex flex-wrap items-center gap-2">
+                    <div className="mt-3 pt-3 border-t border-edge/40 flex flex-wrap items-center gap-2">
                       <div className="label">linked IOCs</div>
                       {ev.ioc_ids.map(i => (
                         <span key={i} className="px-1.5 py-0.5 text-[10px] border divider rounded bg-bg-base font-mono">
@@ -253,7 +253,7 @@ export default async function MissionWorkspace({ params }: { params: Promise<{ i
                   {e.ioc_scores.map(s => {
                     const def = c.rubric.iocs.find(i => i.ioc_id === s.ioc_id);
                     return (
-                      <tr key={s.ioc_id} className="border-b divider/40">
+                      <tr key={s.ioc_id} className="border-b border-edge/40">
                         <td className="py-2 pr-3">
                           <div className="font-semibold">{def?.name ?? s.ioc_id}</div>
                           <div className="text-[10px] text-ink-muted font-mono">{s.ioc_id}</div>

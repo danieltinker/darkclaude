@@ -471,7 +471,7 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
                               <div className="font-mono text-[11px] text-accent-green break-all">{h.target}</div>
                               <div className="text-[10px] text-ink-muted mt-1">{h.goal}</div>
                             </summary>
-                            <div className="px-2 pb-2 pt-1 border-t divider/50">
+                            <div className="px-2 pb-2 pt-1 border-t border-edge/50">
                               {(h.evidence_refs?.length ?? 0) > 0 ? (
                                 <>
                                   <div className="text-[10px] text-ink-muted tracking-widest mb-1">CAPTURED EVIDENCE</div>
@@ -582,7 +582,7 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
                           <div className="text-ink-muted">sha256</div>
                           <div className="text-ink-secondary text-right break-all">{p.sha256}</div>
                         </div>
-                        <div className="mt-3 pt-3 border-t divider/40 flex items-center justify-between">
+                        <div className="mt-3 pt-3 border-t border-edge/40 flex items-center justify-between">
                           <div className="flex flex-wrap gap-1">
                             {p.related_ioc_ids.map(id => {
                               const ioc = c.rubric.iocs.find(i => i.ioc_id === id);
@@ -596,13 +596,12 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
                               );
                             })}
                           </div>
-                          <button
-                            disabled
-                            title="Demo only — wire to /api/payloads/:id/download in the real system"
-                            className="px-3 py-1.5 text-[10px] tracking-widest rounded border border-accent-red/40 bg-accent-red/10 text-accent-red opacity-60 cursor-not-allowed"
+                          <span
+                            title="POC: in the real system this routes to /api/payloads/:id/download with auth + sha256 verification"
+                            className="px-2.5 py-1 text-[10px] tracking-widest rounded border border-ink-muted/40 bg-bg-card text-ink-muted"
                           >
-                            ⬇ DOWNLOAD
-                          </button>
+                            DEMO · DOWNLOAD WIRED IN PRODUCTION
+                          </span>
                         </div>
                       </div>
                     ))}

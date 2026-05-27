@@ -321,8 +321,8 @@ function ScoringGuide() {
           <div className="grid grid-cols-4 gap-2 text-xs">
             <VerdictRange label="benign" range="< 4" color="green" />
             <VerdictRange label="inconclusive" range="4–11" color="blue" />
-            <VerdictRange label="riskware" range="12–23" color="amber" />
-            <VerdictRange label="malicious" range="≥ 24" color="red" />
+            <VerdictRange label="riskware" range="12–27" color="amber" />
+            <VerdictRange label="malicious" range="≥ 28" color="red" />
           </div>
         </div>
       </Panel>

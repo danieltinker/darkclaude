@@ -88,7 +88,7 @@ export default async function ClosurePage({ params }: { params: Promise<{ id: st
           </thead>
           <tbody>
             {r.checked_iocs.map(ci => (
-              <tr key={ci.ioc_id} className="border-b divider/40">
+              <tr key={ci.ioc_id} className="border-b border-edge/40">
                 <td className="py-2 pr-3 font-semibold">{ci.ioc_name}</td>
                 <td className="px-3 text-[10px] text-ink-muted font-mono">{ci.ioc_id}</td>
                 <td className="pl-3 text-right">

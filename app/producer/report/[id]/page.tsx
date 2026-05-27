@@ -102,7 +102,7 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
           </thead>
           <tbody>
             {r.reconciled_scores.map(s => (
-              <tr key={s.ioc_id} className="border-b divider/40">
+              <tr key={s.ioc_id} className="border-b border-edge/40">
                 <td className="py-3 pr-3">
                   <div className="font-semibold">{s.ioc_name}</div>
                   <div className="text-[10px] text-ink-muted font-mono">{s.ioc_id}</div>
@@ -112,7 +112,15 @@ export default async function ReportPage({ params }: { params: Promise<{ id: str
                 <td className="px-3"><IocLevelBadge level={s.final_level} /></td>
                 <td className="px-3 text-right tabular-nums font-semibold">{s.final_points}</td>
                 <td className="pl-3 text-[10px] text-ink-muted">
-                  {s.evidence_ids.length ? s.evidence_ids.join(', ') : '—'}
+                  {(() => {
+                    const ids = s.evidence_ids.filter(x => x.startsWith('ev_'));
+                    if (ids.length === 0) return '—';
+                    return ids.map(id => (
+                      <a key={id} href={`#evidence-${id}`} className="text-accent-green hover:underline mr-2 last:mr-0">
+                        {id}
+                      </a>
+                    ));
+                  })()}
                 </td>
               </tr>
             ))}

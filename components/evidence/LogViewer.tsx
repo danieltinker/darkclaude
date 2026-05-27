@@ -10,7 +10,10 @@ export type LogRow = {
   channel: 'network' | 'logcat' | 'hook';
   level?: 'info' | 'warn' | 'error';
   text: string;
-  insight?: { ioc_id: string; severity: 'low' | 'medium' | 'high'; note: string };
+  // Insight points at the evidence_id that this log row contributed to.
+  // (The earlier field name `ioc_id` was misleading — these are evidence
+  // IDs that anchor into the Evidence Board, not rubric IOC IDs.)
+  insight?: { evidence_id: string; severity: 'low' | 'medium' | 'high'; note: string };
 };
 
 type Props = {
@@ -92,15 +95,15 @@ export function LogViewer({ rows }: Props) {
               <span className="text-ink-primary break-all">{r.text}</span>
             </div>
             {r.insight && (
-              <div className="ml-23 mt-1 flex items-start gap-2 pl-2 border-l border-accent-amber/30">
+              <div className="ml-[5.75rem] mt-1 flex items-start gap-2 pl-2 border-l border-accent-amber/30">
                 <span className={`px-1.5 py-0.5 text-[9px] tracking-widest border rounded ${SEVERITY_COLORS[r.insight.severity]}`}>
                   INSIGHT
                 </span>
                 <a
-                  href={`#evidence-${r.insight.ioc_id}`}
+                  href={`#evidence-${r.insight.evidence_id}`}
                   className="text-[10px] text-accent-amber hover:underline"
                 >
-                  {r.insight.ioc_id}
+                  {r.insight.evidence_id}
                 </a>
                 <span className="text-[10px] text-ink-secondary">{r.insight.note}</span>
               </div>

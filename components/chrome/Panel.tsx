@@ -32,7 +32,7 @@ export function Panel({
 
 export function KV({ k, v, mono = true }: { k: string; v: ReactNode; mono?: boolean }) {
   return (
-    <div className="flex justify-between gap-4 text-xs py-1 border-b divider/40 last:border-0">
+    <div className="flex justify-between gap-4 text-xs py-1 border-b border-edge/40 last:border-0">
       <span className="text-ink-muted tracking-wider">{k}</span>
       <span className={`text-ink-primary text-right ${mono ? 'font-mono' : ''}`}>{v}</span>
     </div>

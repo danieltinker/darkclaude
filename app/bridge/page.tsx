@@ -40,7 +40,7 @@ export default function BridgePage() {
   return (
     <div className="space-y-6">
       <div>
-        <div className="text-[10px] text-ink-muted tracking-[0.3em] mb-1">// 02 PIXELBRIDGE</div>
+        <div className="text-[10px] text-ink-muted tracking-[0.3em] mb-1">// 03 PIXELBRIDGE</div>
         <h1 className="text-2xl font-semibold">Append-only Event Log</h1>
         <p className="text-sm text-ink-secondary mt-1">
           PixelBridge is transport only — every message is a typed package with checksum and case identity. Files are never edited after creation.
@@ -74,7 +74,7 @@ export default function BridgePage() {
         </Panel>
       </div>
 
-      <Panel title="Event Stream" section="04" subtitle="all messages in chronological order">
+      <Panel title="Event Stream" section="05" subtitle="all messages in chronological order">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-[10px] tracking-widest text-ink-muted border-b divider">
@@ -89,7 +89,7 @@ export default function BridgePage() {
           </thead>
           <tbody>
             {BRIDGE_EVENTS.map(ev => (
-              <tr key={ev.event_id} className="border-b divider/40 hover:bg-bg-card">
+              <tr key={ev.event_id} className="border-b border-edge/40 hover:bg-bg-card">
                 <td className="py-2 pr-3 font-mono text-[10px] text-ink-secondary">
                   {new Date(ev.created_at).toLocaleString()}
                 </td>
@@ -119,7 +119,7 @@ export default function BridgePage() {
         </table>
       </Panel>
 
-      <Panel title="By Case" section="05" subtitle="all events grouped by case_key">
+      <Panel title="By Case" section="06" subtitle="all events grouped by case_key">
         <div className="space-y-4">
           {Object.entries(byCase).map(([caseKey, events]) => (
             <div key={caseKey} className="card p-3">
@@ -148,7 +148,7 @@ export default function BridgePage() {
       </Panel>
 
       <div className="grid grid-cols-2 gap-6">
-        <Panel title="Protocol Rules" section="06">
+        <Panel title="Protocol Rules" section="07">
           <ul className="space-y-2 text-xs text-ink-secondary">
             <li><span className="text-accent-green">✓</span> Append-only — files never edited after creation</li>
             <li><span className="text-accent-green">✓</span> Atomic writes — .tmp → validate → atomic rename to .json</li>
@@ -158,7 +158,7 @@ export default function BridgePage() {
             <li><span className="text-accent-green">✓</span> Case identity in every payload</li>
           </ul>
         </Panel>
-        <Panel title="Event Types" section="07">
+        <Panel title="Event Types" section="08">
           <div className="space-y-1.5 text-[11px]">
             {Object.entries(TYPE_COLORS).map(([type, color]) => (
               <div key={type} className="flex items-center gap-3">
