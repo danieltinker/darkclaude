@@ -18,7 +18,7 @@ import {
   StaticSliceSummary,
   SubmissionReport,
 } from './types';
-import { RISKWARE_GATE_POLICY, RISKWARE_METADATA_GATE_POLICY, RISKWARE_RUBRIC } from './rubrics';
+import { RISKWARE_GATE_POLICY, RISKWARE_METADATA_GATE_POLICY, RISKWARE_RUBRIC, SPYWARE_RUBRIC } from './rubrics';
 import { reconcileScores, sumIocPoints, verdictFromScore } from './scoring';
 
 // =====================================================================
@@ -1244,8 +1244,8 @@ const EXPL_MISSION: ReviewMissionPackage = {
 const EXPL_FINDING: ExploratoryFinding = {
   finding_id: 'finding_expl_001',
   case_identity: EXPL_IDENTITY,
-  unanticipated_ioc_id: 'rw_sms_premium_subscription_trap',
-  unanticipated_ioc_name: 'SMS premium subscription trap (unanticipated)',
+  unanticipated_ioc_id: 'sp_sms_premium_trap',
+  unanticipated_ioc_name: 'Premium-SMS subscription trap (spyware rubric)',
   level: 'strong',
   confidence: 0.89,
   description:
@@ -1521,6 +1521,42 @@ export const QUEUE_CASES: QueueCase[] = [
     mission_package: EXPL_MISSION,
     evidence_package: EXPL_EVIDENCE,
     exploratory_finding: EXPL_FINDING,
+    // MULTI-RUBRIC: this case spans BOTH riskware (static-hypothesized
+    // remote-controlled WebView) AND spyware (the runtime-discovered
+    // SMS premium-subscription trap). Each rubric scores independently.
+    rubrics: [
+      {
+        rubric: RISKWARE_RUBRIC,
+        candidate_score: 8,
+        candidate_iocs: EXPL_SCORECARD.candidate_iocs,
+        missing_signals: [],
+        gate_status: 'DYNAMIC_ANALYSIS_REQUIRED',
+      },
+      {
+        rubric: SPYWARE_RUBRIC,
+        candidate_score: 0,
+        candidate_iocs: [],
+        missing_signals: [{ ioc_id: 'sp_sms_premium_trap', ioc_name: 'Premium-SMS subscription trap', reason: 'Static slice did not reach the SMS branch (4 spin-attempts deep).' }],
+        // Static did not flag this rubric — but dynamic exploratory mode
+        // captured strong evidence for it. The reconciled score lifts it
+        // post-hoc.
+        gate_status: 'CLOSE_EARLY_STATIC_INSUFFICIENT',
+        reconciled: [
+          {
+            ioc_id: 'sp_sms_premium_trap',
+            ioc_name: 'Premium-SMS subscription trap',
+            static_level: null,
+            dynamic_level: 'strong',
+            final_level: 'strong',
+            final_points: 8,
+            evidence_ids: EXPL_FINDING.evidence_artifacts,
+            dynamic_reason: EXPL_FINDING.description,
+            dynamic_confidence: EXPL_FINDING.confidence,
+            dynamic_scored_by: 'ConsumerDynamicEvidenceAgent',
+          },
+        ],
+      },
+    ],
   },
   // Case 3 (STATIC CLOSURE): Lumen Notepad — metadata passes but static fails
   {

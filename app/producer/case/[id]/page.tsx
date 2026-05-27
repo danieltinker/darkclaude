@@ -9,6 +9,7 @@ import { ScoreChip } from '@/components/score/ScoreNumber';
 import { ArtifactJsonViewer } from '@/components/artifact/ArtifactJsonViewer';
 import { TraceWithEvidence } from '@/components/evidence/TraceWithEvidence';
 import { QueueLockHeartbeat } from '@/components/pipeline/QueueLockHeartbeat';
+import { RubricBreakdown } from '@/components/pipeline/RubricBreakdown';
 import { EvidenceBoard } from '@/components/evidence/EvidenceBoard';
 import { EscalatedByRuleBanner } from '@/components/pipeline/EscalatedByRuleBanner';
 
@@ -44,6 +45,16 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
       <FunnelChain c={c} />
 
       {c.gate_decision && <EscalatedByRuleBanner gate={c.gate_decision} />}
+
+      {c.rubrics && c.rubrics.length > 1 && (
+        <Panel
+          title="Multi-rubric Breakdown"
+          section="·"
+          subtitle={`this case is under review for ${c.rubrics.length} categories — each scores independently`}
+        >
+          <RubricBreakdown rubrics={c.rubrics} />
+        </Panel>
+      )}
 
       {c.exploratory_finding && (
         <div className="panel border-accent-violet/40 bg-accent-violet/5 p-5">

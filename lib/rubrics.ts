@@ -140,3 +140,42 @@ export const RISKWARE_RUBRIC: IocRubric = {
     },
   ],
 };
+
+// =====================================================================
+// SPYWARE — minimal second rubric so we can demo multi-rubric cases.
+// =====================================================================
+export const SPYWARE_RUBRIC: IocRubric = {
+  rubric_id: 'rubric_spyware_v1',
+  rubric_version: '1.0.0',
+  rubric_hash: 'sha256:9e5b3c8f2a1d4e6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b',
+  category_id: 'spyware',
+  category_name: 'Spyware',
+  iocs: [
+    {
+      ioc_id: 'sp_sms_premium_trap',
+      name: 'Premium-SMS subscription trap',
+      levels: {
+        weak: { points: 2, definition: 'SmsManager / sendTextMessage references present near reward / conversion code.' },
+        medium: { points: 4, definition: 'Code path sends SMS to short-code based on remote/local config.' },
+        strong: { points: 8, definition: 'Runtime captures SMS_SEND intent with body + short-code recipient.' },
+      },
+    },
+    {
+      ioc_id: 'sp_contacts_exfil',
+      name: 'Contacts exfiltration',
+      levels: {
+        weak: { points: 2, definition: 'READ_CONTACTS permission requested without a clear feature need.' },
+        medium: { points: 4, definition: 'ContactsContract reads feed an outbound HTTP request.' },
+        strong: { points: 8, definition: 'Runtime captures network upload containing contact records.' },
+      },
+    },
+  ],
+};
+
+export const SPYWARE_GATE_POLICY: GatePolicy = {
+  category_id: 'spyware',
+  dynamic_analysis_threshold: 8,
+  auto_close_below_score: 4,
+  human_review_band: { min: 4, max: 7 },
+  force_dynamic_if: ['sms_intent_present_near_billing', 'contacts_read_with_network_egress'],
+};

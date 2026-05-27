@@ -518,6 +518,26 @@ export type StaticClosureReport = {
   created_at: string;
 };
 
+// =====================================================================
+// MULTI-RUBRIC SUPPORT (additive — backward compatible)
+// =====================================================================
+// A case can be under review for multiple categories simultaneously
+// (e.g. an app suspected of BOTH riskware AND spyware). Each rubric
+// gets its own hypotheses, scorecard subset, threshold, and IOC scoring
+// — but they share the same identity, install, slice, and lock.
+
+export type RubricRunState = {
+  rubric: IocRubric;
+  // Static-side state, scoped to this rubric.
+  candidate_score: number;
+  candidate_iocs: IocCandidateScore[];
+  missing_signals: Array<{ ioc_id: string; ioc_name: string; reason: string }>;
+  // Gate decision is per-rubric: one rubric can escalate while another closes.
+  gate_status: GateDecisionStatus;
+  // Reconciled scores after dynamic returns, scoped to this rubric.
+  reconciled?: ReconciledIocScore[];
+};
+
 // DeepInspectionReport replaces/extends the old SubmissionReport.
 // It composes the entire funnel chain into a reviewer-ready document.
 export type DeepInspectionReport = SubmissionReport & {
@@ -571,6 +591,10 @@ export type QueueCase = {
   extracted_payloads?: ExtractedPayload[];
   report?: DeepInspectionReport;
   worker_analytics?: WorkerAnalytics[];
+  // Optional multi-rubric breakdown. When set, the case is under review
+  // for 2+ categories — UI surfaces per-rubric tabs/sections. When
+  // omitted, the case uses single-rubric mode (the existing `rubric` field).
+  rubrics?: RubricRunState[];
 };
 
 // PixelBridge append-only event log
