@@ -43,6 +43,46 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
 
       {c.gate_decision && <EscalatedByRuleBanner gate={c.gate_decision} />}
 
+      {c.exploratory_finding && (
+        <div className="panel border-accent-violet/40 bg-accent-violet/5 p-5">
+          <div className="flex items-baseline justify-between mb-3">
+            <div className="flex items-baseline gap-3">
+              <span className="px-2 py-1 text-[10px] tracking-widest border border-accent-violet/40 rounded bg-accent-violet/10 text-accent-violet">
+                EXPLORATORY FINDING
+              </span>
+              <span className="text-[10px] text-accent-violet font-mono">
+                {c.exploratory_finding.unanticipated_ioc_id}
+              </span>
+            </div>
+            <span className="text-[10px] text-ink-muted">
+              breathing-room budget used: {c.exploratory_finding.budget_breathing_room_used_minutes}m
+            </span>
+          </div>
+          <div className="text-base font-semibold mb-1">{c.exploratory_finding.unanticipated_ioc_name}</div>
+          <p className="text-xs text-ink-secondary mb-3 leading-relaxed">
+            {c.exploratory_finding.description}
+          </p>
+          <div className="grid grid-cols-3 gap-4 mb-3">
+            <div className="card p-2">
+              <div className="text-[10px] text-ink-muted tracking-widest mb-1">LEVEL</div>
+              <span className="text-sm font-semibold text-accent-violet uppercase">{c.exploratory_finding.level}</span>
+            </div>
+            <div className="card p-2">
+              <div className="text-[10px] text-ink-muted tracking-widest mb-1">CONFIDENCE</div>
+              <span className="text-sm font-semibold tabular-nums">{(c.exploratory_finding.confidence * 100).toFixed(0)}%</span>
+            </div>
+            <div className="card p-2">
+              <div className="text-[10px] text-ink-muted tracking-widest mb-1">EVIDENCE ARTIFACTS</div>
+              <span className="text-sm font-semibold tabular-nums">{c.exploratory_finding.evidence_artifacts.length}</span>
+            </div>
+          </div>
+          <div className="card p-3">
+            <div className="text-[10px] tracking-widest text-ink-muted mb-1">WHY STATIC MISSED IT</div>
+            <p className="text-xs text-ink-secondary">{c.exploratory_finding.why_static_missed_it}</p>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         <div className="card p-4">
           <div className="label mb-2">static score</div>

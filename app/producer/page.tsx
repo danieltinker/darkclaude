@@ -3,6 +3,7 @@ import { QUEUE_CASES } from '@/lib/mock-data';
 import { Panel } from '@/components/chrome/Panel';
 import { GateBadge, IocLevelBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/status/StatusBadge';
 import { PipelineKanban } from '@/components/pipeline/PipelineKanban';
+import { ScoreNumber } from '@/components/score/ScoreNumber';
 
 export default function ProducerQueue() {
   return (
@@ -90,7 +91,13 @@ export default function ProducerQueue() {
                   <td className="px-2">
                     <StatusBadge status={c.consumer_status} side="consumer" />
                   </td>
-                  <td className="px-2 text-right tabular-nums font-semibold">{c.final_score || '—'}</td>
+                  <td className="px-2 text-right">
+                    {c.final_score > 0 ? (
+                      <ScoreNumber value={c.final_score} threshold={28} mode="higher_is_worse" size="sm" showThreshold={false} />
+                    ) : (
+                      <span className="text-ink-muted text-[10px]">—</span>
+                    )}
+                  </td>
                   <td className="pl-2 text-right">
                     {c.report ? (
                       <VerdictBadge verdict={c.report.verdict_candidate} />

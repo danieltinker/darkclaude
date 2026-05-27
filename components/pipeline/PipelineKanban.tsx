@@ -5,6 +5,7 @@
 import Link from 'next/link';
 import type { QueueCase } from '@/lib/types';
 import { PriorityBadge, VerdictBadge } from '@/components/status/StatusBadge';
+import { ScoreNumber } from '@/components/score/ScoreNumber';
 
 type ColumnId =
   | 'metadata'
@@ -112,8 +113,15 @@ export function PipelineKanban({ cases }: { cases: QueueCase[] }) {
                 </div>
                 <div className="text-[9px] text-ink-muted truncate">v{c.case_identity.version_code}</div>
                 <div className="mt-2 flex items-center justify-between">
-                  <span className="text-[9px] text-ink-muted">
-                    score <span className="text-ink-primary tabular-nums">{c.final_score || c.static_score}</span>
+                  <span className="text-[9px] text-ink-muted flex items-center gap-1">
+                    score{' '}
+                    <ScoreNumber
+                      value={c.final_score || c.static_score}
+                      threshold={28}
+                      mode="higher_is_worse"
+                      size="sm"
+                      showThreshold={false}
+                    />
                   </span>
                   {c.report && <VerdictBadge verdict={c.report.verdict_candidate} />}
                 </div>
