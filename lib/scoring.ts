@@ -1,4 +1,4 @@
-import { IocCandidateScore, IocLevel, IOC_POINTS, IocRubric, ReconciledIocScore } from './types';
+import { IocCandidateScore, IocLevel, IOC_POINTS, IocRubric, ReconciledIocScore, DynamicVerdict, CaseIdentity } from './types';
 
 const LEVEL_RANK: Record<IocLevel, number> = { weak: 1, medium: 2, strong: 3 };
 
@@ -66,12 +66,35 @@ function pickStrongest(scores: IocCandidateScore[]): IocCandidateScore | undefin
   return scores.reduce((best, cur) => (LEVEL_RANK[cur.level] > LEVEL_RANK[best.level] ? cur : best));
 }
 
-// Verdict thresholds. Riskware = 12–27, malicious = 28+. GRC-001
-// canonically lands in riskware (final=24) and stays there until human
-// review escalates, matching the README + golden-case category.
+// Verdict thresholds. Riskware = 12–27, malicious = 28+. Retained for
+// backward compatibility with the old DeepInspectionReport.verdict_candidate
+// field; new UI uses dynamicVerdict() (TP/FP) instead.
 export function verdictFromScore(score: number): 'malicious' | 'riskware' | 'benign' | 'inconclusive' {
   if (score >= 28) return 'malicious';
   if (score >= 12) return 'riskware';
   if (score >= 4) return 'inconclusive';
   return 'benign';
+}
+
+// =====================================================================
+// Dynamic verdict — TP/FP for the category under review.
+//   score > 16        → strong true positive
+//   8 ≤ score ≤ 16    → true positive
+//   2 ≤ score < 8     → inconclusive (lean FP)
+//   score < 2         → strong false positive
+// =====================================================================
+export function dynamicVerdict(score: number): DynamicVerdict {
+  if (score > 16) return 'strong_tp';
+  if (score >= 8) return 'tp';
+  if (score >= 2) return 'inconclusive';
+  return 'strong_fp';
+}
+
+export function isTruePositive(v: DynamicVerdict): boolean {
+  return v === 'strong_tp' || v === 'tp';
+}
+
+// Stable mission id fallback for POC literals that omit it.
+export function getMissionId(identity: CaseIdentity): string {
+  return identity.mission_id ?? `m_${identity.app_review_id}`;
 }

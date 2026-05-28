@@ -1,5 +1,6 @@
 import {
   BridgeEvent,
+  CaseIdentity,
   DeepInspectionReport,
   DynamicEvidencePackage,
   ExploratoryFinding,
@@ -250,7 +251,7 @@ function makeInstallVerification(success = true): InstallVerification {
 // FUNNEL: install ok → static slice → scorecard 10 → gate → dynamic
 // =====================================================================
 
-const GRC_001_IDENTITY = {
+const GRC_001_IDENTITY: CaseIdentity = {
   app_review_id: 'review_2026_000143',
   queue_item_id: 'qitem_001',
   package_name: 'com.adsync.dailyoffers',
@@ -572,7 +573,7 @@ const GRC_001_EVIDENCE: DynamicEvidencePackage = {
 // FUNNEL: install ok → scorecard 8 → gate → dynamic (in progress)
 // =====================================================================
 
-const GRC_002_IDENTITY = {
+const GRC_002_IDENTITY: CaseIdentity = {
   app_review_id: 'review_2026_000167',
   queue_item_id: 'qitem_002',
   package_name: 'com.brightwave.flashlight',
@@ -709,7 +710,7 @@ const GRC_002_MISSION: ReviewMissionPackage = {
 // NEW: CLOSED-EARLY CASE — Static funnel insufficient potential
 // =====================================================================
 
-const CLOSURE_IDENTITY = {
+const CLOSURE_IDENTITY: CaseIdentity = {
   app_review_id: 'review_2026_000245',
   queue_item_id: 'qitem_005',
   package_name: 'com.lumenlabs.notepad',
@@ -900,7 +901,7 @@ const EMPTY_STATIC_TRIAGE = {
 // METADATA-GATE CLOSURE CASE — closes BEFORE the static funnel
 // =====================================================================
 
-const META_CLOSURE_IDENTITY = {
+const META_CLOSURE_IDENTITY: CaseIdentity = {
   app_review_id: 'review_2026_000301',
   queue_item_id: 'qitem_006',
   package_name: 'com.cleartools.calendar',
@@ -941,7 +942,7 @@ const META_CLOSURE_REPORT: MetadataClosureReport = {
 // FALSE POSITIVE CASE — static suspected riskware, dynamic disproved
 // =====================================================================
 
-const FP_IDENTITY = {
+const FP_IDENTITY: CaseIdentity = {
   app_review_id: 'review_2026_000312',
   queue_item_id: 'qitem_007',
   package_name: 'com.mirasound.player',
@@ -1139,7 +1140,7 @@ const FP_EVIDENCE: DynamicEvidencePackage = {
 // EXPLORATORY-FINDING CASE — dynamic discovered an unanticipated IOC
 // =====================================================================
 
-const EXPL_IDENTITY = {
+const EXPL_IDENTITY: CaseIdentity = {
   app_review_id: 'review_2026_000333',
   queue_item_id: 'qitem_008',
   package_name: 'com.snapread.scanner',
@@ -1581,7 +1582,7 @@ export const QUEUE_CASES: QueueCase[] = [
   },
   // Case 4 (STATIC SLICE COMPLETE): CoinMint Spin & Win — scorecard ready, awaiting gate
   ((): QueueCase => {
-    const id = {
+    const id: CaseIdentity = {
       app_review_id: 'review_2026_000201',
       queue_item_id: 'qitem_003',
       package_name: 'com.coinmint.spinwin',
@@ -1687,7 +1688,7 @@ export const QUEUE_CASES: QueueCase[] = [
   })(),
   // Case 5 (QUEUE LOCKED, FUNNEL RUNNING): Zenith Live Wallpaper
   ((): QueueCase => {
-    const id = {
+    const id: CaseIdentity = {
       app_review_id: 'review_2026_000219',
       queue_item_id: 'qitem_004',
       package_name: 'com.zenith.wallpaper',
@@ -1730,7 +1731,7 @@ export const QUEUE_CASES: QueueCase[] = [
   // FAMILY: DexClassLoader dropper — decrypts asset, executes via reflection
   // ===================================================================
   ((): QueueCase => {
-    const id = {
+    const id: CaseIdentity = {
       app_review_id: 'review_2026_000401',
       queue_item_id: 'qitem_010',
       package_name: 'com.nyxlabs.battery',
@@ -1807,7 +1808,7 @@ export const QUEUE_CASES: QueueCase[] = [
   // FAMILY: HTTP-in-WebView — cleartext URL load
   // ===================================================================
   ((): QueueCase => {
-    const id = {
+    const id: CaseIdentity = {
       app_review_id: 'review_2026_000412',
       queue_item_id: 'qitem_011',
       package_name: 'com.spinpix.dailyclaim',
@@ -1871,7 +1872,7 @@ export const QUEUE_CASES: QueueCase[] = [
   // FAMILY: Firebase Remote Config URL
   // ===================================================================
   ((): QueueCase => {
-    const id = {
+    const id: CaseIdentity = {
       app_review_id: 'review_2026_000423',
       queue_item_id: 'qitem_012',
       package_name: 'com.embergrow.tunes',
@@ -1939,7 +1940,7 @@ export const QUEUE_CASES: QueueCase[] = [
   // FAMILY: AppsFlyer onConversionDataSuccess → WebView
   // ===================================================================
   ((): QueueCase => {
-    const id = {
+    const id: CaseIdentity = {
       app_review_id: 'review_2026_000434',
       queue_item_id: 'qitem_013',
       package_name: 'com.cryomedia.scanqr',

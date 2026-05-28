@@ -10,14 +10,34 @@ export const IOC_POINTS: Record<IocLevel, number> = {
   strong: 8,
 };
 
+// The five malware categories an app can be reviewed under. The category
+// is an INPUT chosen up-front (not a verdict) — it scopes which rubric +
+// flow graphs apply.
+export type MalwareCategory = 'riskware' | 'toll_fraud' | 'phishing' | 'backdoor' | 'trojan';
+
+export const MALWARE_CATEGORY_LABEL: Record<MalwareCategory, string> = {
+  riskware: 'Riskware',
+  toll_fraud: 'Toll Fraud',
+  phishing: 'Phishing',
+  backdoor: 'Backdoor',
+  trojan: 'Trojan',
+};
+
 export type CaseIdentity = {
   app_review_id: string;
   queue_item_id: string;
+  // mission_id is generated per investigation. Same package+version can
+  // be investigated multiple times → multiple missions. Optional in the
+  // POC literals; production generates one per investigation. Use
+  // getMissionId() for a stable fallback.
+  mission_id?: string;
+  // package_name is the durable real-world identity; version_code
+  // distinguishes builds (one can be malicious, another benign).
   package_name: string;
   app_name: string;
   version_name: string;
   version_code: number;
-  category_id: string;
+  category_id: MalwareCategory;
   category_name: string;
 };
 
@@ -519,6 +539,200 @@ export type StaticClosureReport = {
 };
 
 // =====================================================================
+// RUBRIC FLOW GRAPH — generic, graph-shaped proof config
+// =====================================================================
+// Every rubric/IOC communicates HOW to reach a TP verdict as a graph:
+// nodes (path-pinned static signatures) + edges (chain relations).
+// This config is generic — not specific to any one app. A case fills it
+// with evidence (see IocProofInstance below).
+
+export type DynamicProofMethod = 'frida' | 'http_toolkit' | 'logcat' | 'screenshot';
+
+// A node IS a static signature — pins an exact code location so the
+// Producer and Consumer machines verify with zero context gaps.
+export type StaticSignature = {
+  signature_id: string;
+  class_name: string;        // fully-qualified, e.g. com.x.MainActivity
+  method: string;            // e.g. o(java.lang.String)
+  file_path: string;         // exact decompiled path, e.g. sources/com/x/MainActivity.java
+  line: number;              // focal line number
+  context_before: string[];  // lines above the focal line
+  focal_line: string;        // the exact line of interest (highlighted in UI)
+  context_after: string[];   // lines below
+  smali_path?: string;       // optional, for hook precision
+};
+
+export type VerificationSpec = {
+  methods: DynamicProofMethod[];
+  hook_target: string;       // exact Frida target derived from the signature
+  expectation: string;       // what a successful proof must show
+};
+
+export type FlowNodeKind = 'trigger' | 'transform' | 'network' | 'sink' | 'guard';
+
+export type FlowNode = {
+  node_id: string;
+  label: string;
+  kind: FlowNodeKind;
+  what_it_does: string;
+  signature: StaticSignature;
+  verification: VerificationSpec;
+  required_for_tp: boolean;
+};
+
+export type FlowEdgeRelation = 'calls' | 'returns_to' | 'data_flows_to' | 'triggers' | 'guards';
+
+export type FlowEdge = {
+  from: string; // node_id
+  to: string;   // node_id
+  relation: FlowEdgeRelation;
+  label?: string;
+};
+
+export type RubricFlowGraph = {
+  flow_id: string;
+  category_id: MalwareCategory;
+  ioc_id: string;
+  ioc_name: string;
+  summary: string;
+  entry_node: string;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  scoring: {
+    tp_requires: string[]; // node_ids that must be proven for TP
+    note: string;
+  };
+};
+
+// =====================================================================
+// PER-CASE PROOF INSTANCE — attaches evidence to each graph node
+// =====================================================================
+
+export type NodeProofStatus = 'proven' | 'failed_to_prove' | 'pending' | 'needs_human';
+
+export type NodeProof = {
+  node_id: string; // references FlowNode.node_id
+  status: NodeProofStatus;
+  confidence: number;
+  resolved_snippet?: string; // the actual decompiled code found in THIS app
+  evidence: Array<{
+    method: DynamicProofMethod;
+    captured: boolean;
+    observation: string;
+    artifact_ref?: string;
+  }>;
+  human_note?: string;
+  // Human review can reject a node it doesn't find convincing.
+  human_rejected?: boolean;
+};
+
+export type IocProofInstance = {
+  ioc_id: string;
+  flow_id: string;
+  case_key: string;
+  node_proofs: Record<string, NodeProof>;
+  awarded_points: number;
+  all_required_proven: boolean;
+};
+
+// =====================================================================
+// SCORING VERDICT (TP / FP from the dynamic score)
+// =====================================================================
+
+export type DynamicVerdict = 'strong_tp' | 'tp' | 'inconclusive' | 'strong_fp';
+
+export const DYNAMIC_VERDICT_LABEL: Record<DynamicVerdict, string> = {
+  strong_tp: 'Strong True Positive',
+  tp: 'True Positive',
+  inconclusive: 'Inconclusive (lean FP)',
+  strong_fp: 'Strong False Positive',
+};
+
+// =====================================================================
+// HUMAN-IN-THE-LOOP OVERRIDES (two distinct points)
+// =====================================================================
+
+// 1) Gate reopen — a human reopens a closed app and sends it onward.
+export type GateReopenOverride = {
+  reviewer: string;
+  note: string;
+  action: 'reopen_to_static' | 'reopen_to_dynamic' | 'uphold_closure';
+  at: string;
+};
+
+// 2) Verdict flip — a human rejects the agent's proof at the evidence
+// board and overrides the computed TP/FP verdict.
+export type VerdictOverride = {
+  reviewer: string;
+  computed_verdict: DynamicVerdict;
+  final_verdict: DynamicVerdict;
+  reason: string;
+  rejected_node_ids?: string[];
+  at: string;
+};
+
+// =====================================================================
+// MISSION TYPES (typed experiment bodies)
+// =====================================================================
+
+export type MissionKind = 'geo_screenshot_sweep' | 'ioc_proof_chain';
+
+export type GeoScreenshotSweepMission = {
+  kind: 'geo_screenshot_sweep';
+  target: string;                 // e.g. "MainActivity.onResume"
+  capture: DynamicProofMethod[];
+  baseline_country: string;
+  countries: string[];
+  per_country_budget_seconds: number;
+};
+
+export type GeoSweepCell = {
+  country: string;
+  status: 'pending' | 'running' | 'captured' | 'failed' | 'needs_human';
+  screenshot_ref?: string;
+  differs_from_baseline?: boolean;
+  note?: string;
+};
+
+// =====================================================================
+// PACKAGE HISTORY CACHE + DEVICE SYNC + TRANSFER LIFECYCLE
+// =====================================================================
+
+export type PackageVersionHistory = {
+  package_name: string;
+  versions: Array<{
+    version_code: number;
+    version_name: string;
+    mission_id: string;
+    app_review_id: string;
+    category_id: MalwareCategory;
+    verdict: DynamicVerdict | 'pending';
+    final_score: number;
+    reviewed_at: string;
+    notable_iocs: string[];
+  }>;
+};
+
+export type DeviceSyncState = {
+  device_id: string;
+  connected: boolean;
+  last_synced_at: string;
+  cached_artifacts: number;
+  note: string;
+};
+
+export type TransferStatus =
+  | 'not_started'
+  | 'installing'
+  | 'install_failed'
+  | 'installed'
+  | 'waiting_transfer'
+  | 'transferred'
+  | 'on_device'
+  | 'waiting_return'
+  | 'returned';
+
+// =====================================================================
 // MULTI-RUBRIC SUPPORT (additive — backward compatible)
 // =====================================================================
 // A case can be under review for multiple categories simultaneously
@@ -595,6 +809,18 @@ export type QueueCase = {
   // for 2+ categories — UI surfaces per-rubric tabs/sections. When
   // omitted, the case uses single-rubric mode (the existing `rubric` field).
   rubrics?: RubricRunState[];
+  // ---- Phase: flow-graph proof + mission types + human overrides ----
+  mission_kind?: MissionKind;
+  geo_sweep?: GeoScreenshotSweepMission;
+  geo_sweep_cells?: GeoSweepCell[];
+  // Per-IOC proof instances keyed by ioc_id, each filling a RubricFlowGraph.
+  ioc_proofs?: IocProofInstance[];
+  // Human overrides.
+  gate_reopen?: GateReopenOverride;
+  verdict_override?: VerdictOverride;
+  // Transport + device.
+  transfer_status?: TransferStatus;
+  device_sync?: DeviceSyncState;
 };
 
 // PixelBridge append-only event log
