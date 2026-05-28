@@ -10,6 +10,8 @@ import { ArtifactJsonViewer } from '@/components/artifact/ArtifactJsonViewer';
 import { TraceWithEvidence } from '@/components/evidence/TraceWithEvidence';
 import { QueueLockHeartbeat } from '@/components/pipeline/QueueLockHeartbeat';
 import { RubricBreakdown } from '@/components/pipeline/RubricBreakdown';
+import { FlowGraphProof } from '@/components/evidence/FlowGraphProof';
+import { getFlow } from '@/lib/rubric-flows';
 import { EvidenceBoard } from '@/components/evidence/EvidenceBoard';
 import { EscalatedByRuleBanner } from '@/components/pipeline/EscalatedByRuleBanner';
 
@@ -53,6 +55,29 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
           subtitle={`this case is under review for ${c.rubrics.length} categories — each scores independently`}
         >
           <RubricBreakdown rubrics={c.rubrics} />
+        </Panel>
+      )}
+
+      {c.ioc_proofs && c.ioc_proofs.length > 0 && (
+        <Panel
+          title="IOC Proof Graph"
+          section="·"
+          subtitle="path-pinned static signatures proven node-by-node by dynamic evidence · reject a node to break the chain and flip the verdict"
+        >
+          <div className="space-y-6">
+            {c.ioc_proofs.map(pf => {
+              const flow = getFlow(pf.flow_id);
+              if (!flow) return null;
+              return (
+                <FlowGraphProof
+                  key={pf.ioc_id}
+                  flow={flow}
+                  proof={pf}
+                  dynamicScore={c.dynamic_score}
+                />
+              );
+            })}
+          </div>
         </Panel>
       )}
 

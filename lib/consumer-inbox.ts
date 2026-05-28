@@ -25,8 +25,14 @@ import type {
   ConsumerStatus,
   DynamicEvidencePackage,
   GateDecision,
+  GeoScreenshotSweepMission,
+  GeoSweepCell,
+  IocProofInstance,
   IocRubric,
+  MissionKind,
   ReviewMissionPackage,
+  TransferStatus,
+  DeviceSyncState,
 } from './types';
 
 export type ConsumerInboxEntry = {
@@ -35,6 +41,13 @@ export type ConsumerInboxEntry = {
   priority: 'low' | 'medium' | 'high' | 'critical';
   mission_package: ReviewMissionPackage;
   rubric: IocRubric;
+  // Typed experiment body (geo sweep vs IOC proof chain).
+  mission_kind?: MissionKind;
+  ioc_proofs?: IocProofInstance[];
+  geo_sweep?: GeoScreenshotSweepMission;
+  geo_sweep_cells?: GeoSweepCell[];
+  transfer_status?: TransferStatus;
+  device_sync?: DeviceSyncState;
   // The Producer's gate decision — embedded by the Producer to explain
   // WHY this case is being escalated. The Investigator needs the
   // candidate_score + triggered_force_rules + explanation to plan its
@@ -66,6 +79,12 @@ function project(c: typeof QUEUE_CASES[number]): ConsumerInboxEntry | null {
           policy_applied: c.gate_decision.policy_applied,
         }
       : undefined,
+    mission_kind: c.mission_kind,
+    ioc_proofs: c.ioc_proofs,
+    geo_sweep: c.geo_sweep,
+    geo_sweep_cells: c.geo_sweep_cells,
+    transfer_status: c.transfer_status,
+    device_sync: c.device_sync,
     evidence_package: c.evidence_package,
   };
 }

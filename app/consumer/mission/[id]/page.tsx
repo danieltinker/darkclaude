@@ -4,6 +4,9 @@ import { getConsumerMission } from '@/lib/consumer-inbox';
 import { Panel, KV } from '@/components/chrome/Panel';
 import { StatusBadge, PriorityBadge, IocLevelBadge } from '@/components/status/StatusBadge';
 import { EscalatedByRuleBanner } from '@/components/pipeline/EscalatedByRuleBanner';
+import { FlowGraphProof } from '@/components/evidence/FlowGraphProof';
+import { GeoSweepGrid } from '@/components/pipeline/GeoSweepGrid';
+import { getFlow } from '@/lib/rubric-flows';
 
 // Consumer mission workspace reads ONLY from the consumer inbox —
 // no Producer-side fields (metadata, scorecard, worker analytics,
@@ -48,6 +51,40 @@ export default async function MissionWorkspace({ params }: { params: Promise<{ i
             decided_at: '',
           }}
         />
+      )}
+
+      {/* Typed experiment body — switches on mission kind */}
+      {c.mission_kind === 'geo_screenshot_sweep' && c.geo_sweep && c.geo_sweep_cells && (
+        <Panel
+          title="Geo Screenshot Sweep"
+          section="·"
+          subtitle="basic mission — capture the target across many VPN exits; diverging countries are highlighted"
+        >
+          <GeoSweepGrid mission={c.geo_sweep} cells={c.geo_sweep_cells} />
+        </Panel>
+      )}
+
+      {c.mission_kind === 'ioc_proof_chain' && c.ioc_proofs && c.ioc_proofs.length > 0 && (
+        <Panel
+          title="IOC Proof Graph"
+          section="·"
+          subtitle="each node is a path-pinned static signature proven (or not) by dynamic evidence — points are awarded only when the chain is proven"
+        >
+          <div className="space-y-6">
+            {c.ioc_proofs.map(pf => {
+              const flow = getFlow(pf.flow_id);
+              if (!flow) return null;
+              return (
+                <FlowGraphProof
+                  key={pf.ioc_id}
+                  flow={flow}
+                  proof={pf}
+                  dynamicScore={c.evidence_package?.execution_summary.dynamic_score ?? 0}
+                />
+              );
+            })}
+          </div>
+        </Panel>
       )}
 
       <div className="grid grid-cols-3 gap-6">
