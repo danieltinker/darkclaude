@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180" role="img" aria-label="Hidden WebView rendering affiliate offer page">
+  <rect width="320" height="180" fill="#0e1014"/>
+  <rect x="0" y="0" width="320" height="20" fill="#13161c"/>
+  <circle cx="12" cy="10" r="3" fill="#ff5c7a"/><circle cx="24" cy="10" r="3" fill="#f0b15c"/><circle cx="36" cy="10" r="3" fill="#5cf08c"/>
+  <text x="60" y="14" fill="#5a6170" font-family="monospace" font-size="9">promo.cryo-track.io/offer/9921</text>
+  <rect x="20" y="34" width="280" height="40" rx="4" fill="#1a1e26" stroke="#b88cf0" stroke-opacity="0.4"/>
+  <text x="32" y="52" fill="#e6e8ec" font-family="monospace" font-size="12" font-weight="bold">YOU WON A $1000 GIFT CARD</text>
+  <text x="32" y="66" fill="#9ba1ad" font-family="monospace" font-size="9">claim now — limited offer · step 1 of 3</text>
+  <rect x="20" y="86" width="135" height="60" rx="4" fill="#13161c" stroke="#222730"/>
+  <rect x="165" y="86" width="135" height="60" rx="4" fill="#13161c" stroke="#222730"/>
+  <text x="32" y="104" fill="#5cc8f0" font-family="monospace" font-size="9">[ enter phone ]</text>
+  <text x="177" y="104" fill="#5cc8f0" font-family="monospace" font-size="9">[ continue ]</text>
+  <rect x="20" y="156" width="280" height="16" rx="3" fill="#ff5c7a" fill-opacity="0.15" stroke="#ff5c7a" stroke-opacity="0.4"/>
+  <text x="28" y="167" fill="#ff5c7a" font-family="monospace" font-size="8">HIDDEN WEBVIEW · loaded from onConversionDataSuccess chain</text>
+</svg>

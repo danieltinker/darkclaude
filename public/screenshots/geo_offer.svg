@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150" role="img" aria-label="Diverged behavior — hidden offer shown">
+  <rect width="200" height="150" fill="#0e1014"/>
+  <rect x="0" y="0" width="200" height="16" fill="#13161c"/>
+  <text x="8" y="11" fill="#5a6170" font-family="monospace" font-size="8">QR Scanner</text>
+  <rect x="20" y="28" width="160" height="44" rx="5" fill="#1a1e26" stroke="#f0b15c" stroke-opacity="0.5"/>
+  <text x="30" y="46" fill="#e6e8ec" font-family="monospace" font-size="10" font-weight="bold">SPECIAL OFFER</text>
+  <text x="30" y="60" fill="#9ba1ad" font-family="monospace" font-size="8">tap to claim your reward</text>
+  <rect x="20" y="82" width="160" height="46" rx="5" fill="#13161c" stroke="#222730"/>
+  <rect x="32" y="94" width="40" height="22" rx="3" fill="none" stroke="#5cc8f0" stroke-opacity="0.5"/>
+  <text x="52" y="108" fill="#5cc8f0" font-family="monospace" font-size="8" text-anchor="middle">claim</text>
+  <text x="100" y="142" fill="#f0b15c" font-family="monospace" font-size="8" text-anchor="middle">⚠ differs from baseline</text>
+</svg>

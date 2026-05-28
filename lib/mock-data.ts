@@ -20,6 +20,7 @@ import {
   SubmissionReport,
 } from './types';
 import { RISKWARE_GATE_POLICY, RISKWARE_METADATA_GATE_POLICY, RISKWARE_RUBRIC, SPYWARE_RUBRIC } from './rubrics';
+import { MMP_CONVERSION_CLOAK_FLOW } from './rubric-flows';
 import { reconcileScores, sumIocPoints, verdictFromScore } from './scoring';
 
 // =====================================================================
@@ -2003,6 +2004,258 @@ export const QUEUE_CASES: QueueCase[] = [
       },
     };
   })(),
+
+  // ===================================================================
+  // GOLDEN CASE: MMP cloaking via onConversionDataSuccess
+  // The centerpiece — full flow-graph proof, strong TP.
+  // ===================================================================
+  ((): QueueCase => {
+    const id: CaseIdentity = {
+      app_review_id: 'review_2026_000501',
+      queue_item_id: 'qitem_020',
+      mission_id: 'm_2026_000501_a',
+      package_name: 'com.cryomedia.scanqr',
+      app_name: 'CryoMedia QR Scanner',
+      version_name: '5.1.2',
+      version_code: 512,
+      category_id: 'riskware',
+      category_name: 'Riskware',
+    };
+    const meta: ProducerMetadata = {
+      developer_country: 'Unknown',
+      developer_reputation: 'low',
+      developer_account_age_days: 41,
+      related_packages: ['com.cryomedia.filemanager'],
+      prior_flags: ['Sibling app flagged for attribution-driven redirects'],
+      target_markets: ['ID', 'PH', 'BR'],
+      monetization_signals: ['appsflyer-sdk', 'offerwall-sdk'],
+    };
+    const sc = makeMetadataScorecard(id, meta, 'mmp');
+    const gate = makeMetadataGateDecision(id, sc, meta);
+
+    // Per-node proof: 4 boundary nodes proven, orchestrator left needs_human.
+    const proof = {
+      ioc_id: 'rw_mmp_conversion_cloak',
+      flow_id: MMP_CONVERSION_CLOAK_FLOW.flow_id,
+      case_key: `${id.app_review_id}/${id.package_name}/v${id.version_code}/${id.category_id}`,
+      awarded_points: 8,
+      all_required_proven: true,
+      node_proofs: {
+        n_callback: {
+          node_id: 'n_callback',
+          status: 'proven' as const,
+          confidence: 0.95,
+          resolved_snippet: 'a.invoke(data);  // fired on first launch with af_sub1 token',
+          evidence: [
+            { method: 'frida' as const, captured: true, observation: 'onConversionDataSuccess hook fired once on first launch; data.af_sub1 = "k29x..."', artifact_ref: 'ev_mmp_callback_hook' },
+            { method: 'logcat' as const, captured: true, observation: 'AppsFlyer_6.x: conversion data success logged', artifact_ref: 'ev_mmp_logcat' },
+          ],
+        },
+        n_invoke: {
+          node_id: 'n_invoke',
+          status: 'needs_human' as const,
+          confidence: 0.6,
+          resolved_snippet: 'String url = g(token); if (url != null) MainActivity.o(url);',
+          evidence: [
+            { method: 'frida' as const, captured: true, observation: 'invoke() entered; g() call observed. Second branch (o()) confirmed downstream but the in-method control flow was not fully traced within budget.', artifact_ref: 'ev_mmp_invoke_hook' },
+          ],
+          human_note: 'Agent hit its hook-revision budget tracing both internal branches. Boundary nodes are proven independently, so TP holds — flagged for optional human confirmation of the in-method flow.',
+        },
+        n_g: {
+          node_id: 'n_g',
+          status: 'proven' as const,
+          confidence: 0.93,
+          resolved_snippet: 'GET https://t.cryo-track.io/v1/c?t=k29x... → JSON {"dl":"https://promo.cryo-track.io/offer/9921"}',
+          evidence: [
+            { method: 'http_toolkit' as const, captured: true, observation: 'HAR: GET t.cryo-track.io/v1/c · 200 · response.dl = promo.cryo-track.io/offer/9921', artifact_ref: 'ev_mmp_har' },
+            { method: 'frida' as const, captured: true, observation: 'g() return value equals the response "dl" field verbatim', artifact_ref: 'ev_mmp_g_hook' },
+          ],
+        },
+        n_o: {
+          node_id: 'n_o',
+          status: 'proven' as const,
+          confidence: 0.9,
+          resolved_snippet: 'Cloak c = new Cloak(url); BuildersKt.launch(c.scope, ...)',
+          evidence: [
+            { method: 'frida' as const, captured: true, observation: 'MainActivity.o() received the same URL g() returned; coroutine launched', artifact_ref: 'ev_mmp_o_hook' },
+          ],
+        },
+        n_load: {
+          node_id: 'n_load',
+          status: 'proven' as const,
+          confidence: 0.94,
+          resolved_snippet: 'w.loadUrl("https://promo.cryo-track.io/offer/9921")',
+          evidence: [
+            { method: 'frida' as const, captured: true, observation: 'WebView.loadUrl captured the affiliate URL inside the coroutine block', artifact_ref: 'ev_mmp_load_hook' },
+            { method: 'screenshot' as const, captured: true, observation: 'Hidden WebView rendered the affiliate offer page', artifact_ref: 'ev_mmp_screenshot' },
+          ],
+        },
+      },
+    };
+
+    const evidence: DynamicEvidencePackage = {
+      schema_version: '1.0.0',
+      event_type: 'DynamicEvidencePackage',
+      message_id: 'msg_mmp_evidence_01',
+      created_at: '2026-05-28T10:40:00Z',
+      source_agent: 'ConsumerDynamicEvidenceAgent',
+      target_agent: 'ProducerStaticTriageAgent',
+      case_identity: id,
+      execution_summary: {
+        status: 'completed',
+        runtime_verdict_candidate: 'riskware',
+        dynamic_score: 24,
+        confidence: 0.93,
+        summary: 'Full MMP-cloaking chain proven: onConversionDataSuccess → invoke → g() (URL built from t.cryo-track.io response) → MainActivity.o → coroutine-cloaked WebView.loadUrl rendering the affiliate page.',
+      },
+      budget_usage: { actual_total_minutes: 44, actual_iterations: 6, vpn_countries_tested: ['US', 'ID'], stop_reason: 'chain_proven_one_node_needs_human' },
+      ioc_scores: [
+        { ioc_id: 'rw_mmp_conversion_cloak', level: 'strong', confidence: 0.93, reason: 'Full graph proven; loadUrl rendered the affiliate page.', evidence_refs: ['ev_mmp_load_hook', 'ev_mmp_screenshot', 'ev_mmp_har'] },
+        { ioc_id: 'rw_remote_controlled_webview', level: 'strong', confidence: 0.92, reason: 'Server response controls the WebView destination.', evidence_refs: ['ev_mmp_load_hook', 'ev_mmp_har'] },
+        { ioc_id: 'rw_c2_endpoint', level: 'strong', confidence: 0.9, reason: 't.cryo-track.io supplies the cloaked URL.', evidence_refs: ['ev_mmp_har'] },
+      ],
+      experiments: [
+        { iteration: 1, goal: 'Trigger MMP callback', country: 'US', tools_used: ['frida', 'logcat'], hooks_enabled: ['com.cryomedia.scanqr.AttribListener.onConversionDataSuccess'], result: 'Callback fired; chain entered invoke().', artifacts: ['ev_mmp_callback_hook'], next_decision: 'Capture g() network request' },
+        { iteration: 2, goal: 'Capture URL build', country: 'ID', tools_used: ['http_toolkit', 'frida'], hooks_enabled: ['com.cryomedia.scanqr.a.g'], result: 'HAR captured t.cryo-track.io response; g() returned the dl URL.', artifacts: ['ev_mmp_har', 'ev_mmp_g_hook'], next_decision: 'Hook the cloaked sink' },
+        { iteration: 3, goal: 'Prove cloaked load', country: 'ID', tools_used: ['frida', 'screenshot_capture'], hooks_enabled: ['android.webkit.WebView.loadUrl'], result: 'loadUrl captured the affiliate URL; screenshot of rendered page.', artifacts: ['ev_mmp_load_hook', 'ev_mmp_screenshot'], next_decision: 'Stop — chain proven' },
+      ],
+      evidence_items: [
+        { evidence_id: 'ev_mmp_har', ioc_ids: ['rw_c2_endpoint', 'rw_mmp_conversion_cloak'], type: 'network_capture', title: 'g() fetch — t.cryo-track.io returns cloaked URL', description: 'HAR showing GET /v1/c with response.dl = the affiliate URL.', severity: 'high', confidence: 0.93, artifact: { artifact_id: 'art_mmp_har', artifact_type: 'network_capture', path: 'artifacts/dynamic/review_2026_000501/network/g_fetch.har', sha256: 'sha256:mmphar000000000000000000000000000000000000000000000000000000', mime_type: 'application/json' } },
+        { evidence_id: 'ev_mmp_load_hook', ioc_ids: ['rw_mmp_conversion_cloak', 'rw_remote_controlled_webview'], type: 'hook_log', title: 'WebView.loadUrl captured affiliate URL', description: 'Frida hook inside the coroutine block captured the cloaked loadUrl.', severity: 'high', confidence: 0.94, artifact: { artifact_id: 'art_mmp_load', artifact_type: 'hook_log', path: 'artifacts/dynamic/review_2026_000501/hooks/loadurl.json', sha256: 'sha256:mmpload00000000000000000000000000000000000000000000000000000', mime_type: 'application/json' } },
+        { evidence_id: 'ev_mmp_screenshot', ioc_ids: ['rw_mmp_conversion_cloak'], type: 'screenshot', title: 'Hidden WebView rendered affiliate offer', description: 'Screenshot of the cloaked WebView rendering the affiliate page.', severity: 'high', confidence: 0.9, artifact: { artifact_id: 'art_mmp_ss', artifact_type: 'screenshot', path: '/screenshots/mmp_affiliate.svg', sha256: 'sha256:mmpss0000000000000000000000000000000000000000000000000000000', mime_type: 'image/svg+xml' } },
+      ],
+      runtime_trace: [
+        { step: 1, event: 'onConversionDataSuccess fired', artifact_ref: 'ev_mmp_callback_hook' },
+        { step: 2, event: 'g() fetched cloaked URL from t.cryo-track.io', artifact_ref: 'ev_mmp_har' },
+        { step: 3, event: 'MainActivity.o launched coroutine', artifact_ref: 'ev_mmp_o_hook' },
+        { step: 4, event: 'WebView.loadUrl rendered affiliate page', artifact_ref: 'ev_mmp_screenshot' },
+      ],
+      limitations: ['In-method control flow of invoke() not fully traced (budget) — flagged needs_human.', 'Single device model tested.'],
+      recommended_next_action: 'submit_as_riskware_tp',
+      checksum: 'sha256:mmpevidence0000000000000000000000000000000000000000000000000000',
+    };
+
+    return {
+      case_identity: id,
+      producer_status: 'DEEP_REPORT_READY',
+      consumer_status: 'EVIDENCE_RETURNED',
+      priority: 'high',
+      static_score: 12,
+      dynamic_score: 24, // > 16 → STRONG TRUE POSITIVE
+      final_score: 24,
+      metadata: meta,
+      rubric: RISKWARE_RUBRIC,
+      queue_lock: makeLock(id.app_review_id, id.queue_item_id),
+      metadata_scorecard: sc,
+      metadata_gate: gate,
+      install_verification: makeInstallVerification(true),
+      slice_verification: makeSliceVerification(true),
+      static_slice_summary: {
+        status: 'completed', decompile_status: 'success', manifest_parsed: true,
+        native_files_detected: false, network_strings_detected: true, webview_usage_detected: true,
+        candidate_flows: [{ flow_id: 'flow_mmp', summary: 'onConversionDataSuccess → invoke → g (network) → o → cloaked loadUrl', source: 'AttribListener.onConversionDataSuccess', transform: 'a.g', sink: 'WebView.loadUrl', confidence: 0.84 }],
+      },
+      static_triage: {
+        candidate_score: 12,
+        top_ioc_candidates: [
+          { ioc_id: 'rw_mmp_conversion_cloak', level: 'medium', confidence: 0.84, reason: 'Static chain present but destination resolvable only at runtime.' },
+          { ioc_id: 'rw_remote_controlled_webview', level: 'medium', confidence: 0.8, reason: 'Server-supplied URL reaches WebView via coroutine.' },
+          { ioc_id: 'rw_c2_endpoint', level: 'medium', confidence: 0.78, reason: 't.cryo-track.io is the runtime URL source.' },
+        ],
+        execution_hypothesis: {
+          summary: 'MMP attribution callback cloaks the affiliate URL: built from a network response, rendered via a coroutine-obfuscated WebView.loadUrl.',
+          suspected_flow: ['onConversionDataSuccess', 'a.invoke', 'a.g (HTTP + parse)', 'MainActivity.o', 'coroutine WebView.loadUrl'],
+          function_call_trace: [
+            { order: 1, class: 'com.cryomedia.scanqr.AttribListener', method: 'onConversionDataSuccess', reason: 'MMP trigger', related_ioc_ids: ['rw_mmp_conversion_cloak'] },
+            { order: 2, class: 'com.cryomedia.scanqr.a', method: 'invoke', reason: 'Orchestrator' },
+            { order: 3, class: 'com.cryomedia.scanqr.a', method: 'g', reason: 'Fetch + parse URL', related_ioc_ids: ['rw_c2_endpoint'] },
+            { order: 4, class: 'com.cryomedia.scanqr.MainActivity', method: 'o', reason: 'Coroutine cloak' },
+            { order: 5, class: 'com.cryomedia.scanqr.Cloak$block$1', method: 'invokeSuspend', reason: 'Cloaked sink', related_ioc_ids: ['rw_remote_controlled_webview'] },
+          ],
+        },
+        suspicious_urls: [{ url: 'https://t.cryo-track.io/v1/c', severity: 'high', reason: 'Runtime URL source; destination cloaked in response.' }],
+        suspicious_native_files: [],
+        suggested_hooks: [
+          { target: 'com.cryomedia.scanqr.AttribListener.onConversionDataSuccess', goal: 'Confirm trigger fires', related_ioc_ids: ['rw_mmp_conversion_cloak'] },
+          { target: 'com.cryomedia.scanqr.a.g', goal: 'Capture fetched URL', related_ioc_ids: ['rw_c2_endpoint'] },
+          { target: 'android.webkit.WebView.loadUrl', goal: 'Capture cloaked destination', related_ioc_ids: ['rw_remote_controlled_webview', 'rw_mmp_conversion_cloak'] },
+        ],
+      },
+      gate_decision: {
+        case_identity: id, policy_applied: RISKWARE_GATE_POLICY, candidate_score: 12,
+        triggered_force_rules: ['remote_controlled_webview_candidate'],
+        status: 'DYNAMIC_ANALYSIS_REQUIRED', next_step: 'BUILD_DYNAMIC_MISSION_PACKAGE',
+        explanation: 'Score 12 ≥ threshold 8 and force-rule fired. The destination is cloaked, so only dynamic can prove the chain.',
+        decided_at: '2026-05-28T10:01:00Z',
+      },
+      mission_kind: 'ioc_proof_chain',
+      ioc_proofs: [proof],
+      evidence_package: evidence,
+      transfer_status: 'returned',
+      device_sync: { device_id: 'pixel7-lab-02', connected: false, last_synced_at: '2026-05-28T10:41:00Z', cached_artifacts: 9, note: 'Device disconnected after evidence sync — showing cached artifacts from 10:41.' },
+    };
+  })(),
+
+  // ===================================================================
+  // BASIC MISSION: geo screenshot sweep (12 countries, 2 diverge)
+  // ===================================================================
+  ((): QueueCase => {
+    const id: CaseIdentity = {
+      app_review_id: 'review_2026_000510',
+      queue_item_id: 'qitem_021',
+      mission_id: 'm_2026_000510_a',
+      package_name: 'com.glowtools.qrscan',
+      app_name: 'GlowTools QR Scan',
+      version_name: '4.0.1',
+      version_code: 401,
+      category_id: 'riskware',
+      category_name: 'Riskware',
+    };
+    const meta: ProducerMetadata = {
+      developer_country: 'Unknown', developer_reputation: 'low', developer_account_age_days: 33,
+      related_packages: [], prior_flags: [], target_markets: ['ID', 'BR', 'NG'], monetization_signals: ['offerwall-sdk'],
+    };
+    const sc = makeMetadataScorecard(id, meta, 'glow');
+    const gate = makeMetadataGateDecision(id, sc, meta);
+    const sweepCountries = ['US', 'GB', 'DE', 'BR', 'ID', 'NG', 'IN', 'PH', 'MX', 'ZA', 'VN', 'TR'];
+    const diverge = new Set(['BR', 'ID']);
+    return {
+      case_identity: id,
+      producer_status: 'CONSUMER_RUNNING',
+      consumer_status: 'DYNAMIC_RUNNING',
+      priority: 'medium',
+      static_score: 6, dynamic_score: 0, final_score: 0,
+      metadata: meta, rubric: RISKWARE_RUBRIC,
+      queue_lock: makeLock(id.app_review_id, id.queue_item_id),
+      metadata_scorecard: sc, metadata_gate: gate,
+      install_verification: makeInstallVerification(true),
+      slice_verification: makeSliceVerification(true),
+      static_triage: EMPTY_STATIC_TRIAGE,
+      mission_kind: 'geo_screenshot_sweep',
+      geo_sweep: {
+        kind: 'geo_screenshot_sweep',
+        target: 'MainActivity.onResume',
+        capture: ['screenshot', 'logcat'],
+        baseline_country: 'US',
+        countries: sweepCountries,
+        per_country_budget_seconds: 40,
+      },
+      geo_sweep_cells: sweepCountries.map((country, i): import('./types').GeoSweepCell => {
+        const isDiverge = diverge.has(country);
+        return {
+          country,
+          status: i < 9 ? 'captured' : i < 11 ? 'running' : 'pending',
+          screenshot_ref: i < 9 ? (isDiverge ? '/screenshots/geo_offer.svg' : '/screenshots/geo_baseline.svg') : undefined,
+          differs_from_baseline: isDiverge,
+          note: isDiverge
+            ? 'Offer overlay rendered on resume — not present in baseline US session.'
+            : country === 'US' ? 'Baseline — clean scanner UI.' : 'Matches baseline.',
+        };
+      }),
+      transfer_status: 'on_device',
+      device_sync: { device_id: 'pixel7-lab-01', connected: true, last_synced_at: '2026-05-28T11:05:00Z', cached_artifacts: 9, note: 'Device connected; sweep in progress.' },
+    };
+  })(),
 ];
 
 // =====================================================================
@@ -2042,6 +2295,24 @@ export function getCaseByReviewId(id: string): QueueCase | undefined {
 
 export function getCaseKey(c: QueueCase): string {
   return caseKey(c);
+}
+
+// Package version history cache (Mission Control). Lets a reviewer learn
+// from prior versions of the same package — some malicious, some benign.
+const PACKAGE_HISTORY: Record<string, import('./types').PackageVersionHistory> = {
+  'com.cryomedia.scanqr': {
+    package_name: 'com.cryomedia.scanqr',
+    versions: [
+      { version_code: 512, version_name: '5.1.2', mission_id: 'm_2026_000501_a', app_review_id: 'review_2026_000501', category_id: 'riskware', verdict: 'strong_tp', final_score: 24, reviewed_at: '2026-05-28', notable_iocs: ['rw_mmp_conversion_cloak', 'rw_remote_controlled_webview'] },
+      { version_code: 480, version_name: '4.8.0', mission_id: 'm_2026_000333_a', app_review_id: 'review_2026_000333', category_id: 'riskware', verdict: 'tp', final_score: 14, reviewed_at: '2026-04-02', notable_iocs: ['rw_remote_controlled_webview'] },
+      { version_code: 410, version_name: '4.1.0', mission_id: 'm_2025_009912_a', app_review_id: 'review_2025_009912', category_id: 'riskware', verdict: 'inconclusive', final_score: 5, reviewed_at: '2026-01-18', notable_iocs: [] },
+      { version_code: 360, version_name: '3.6.0', mission_id: 'm_2025_008004_a', app_review_id: 'review_2025_008004', category_id: 'riskware', verdict: 'strong_fp', final_score: 1, reviewed_at: '2025-11-09', notable_iocs: [] },
+    ],
+  },
+};
+
+export function getPackageHistory(packageName: string): import('./types').PackageVersionHistory | undefined {
+  return PACKAGE_HISTORY[packageName];
 }
 
 // Aggregate worker analytics across all cases — feeds the /agents

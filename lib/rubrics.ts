@@ -138,6 +138,15 @@ export const RISKWARE_RUBRIC: IocRubric = {
         strong: { points: 8, definition: 'Runtime captures attribution payload and WebView destination set from it.' },
       },
     },
+    {
+      ioc_id: 'rw_mmp_conversion_cloak',
+      name: 'MMP cloaking — affiliate URL cloaked via onConversionDataSuccess',
+      levels: {
+        weak: { points: 2, definition: 'MMP onConversionDataSuccess callback present near WebView usage.' },
+        medium: { points: 4, definition: 'Static chain: callback → URL builder → WebView sink, but destination only resolvable at runtime.' },
+        strong: { points: 8, definition: 'Runtime proves the full chain: callback fires → URL built from a network response → cloaked WebView.loadUrl renders the affiliate page.' },
+      },
+    },
   ],
 };
 

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150" role="img" aria-label="Baseline main activity — benign">
+  <rect width="200" height="150" fill="#0e1014"/>
+  <rect x="0" y="0" width="200" height="16" fill="#13161c"/>
+  <text x="8" y="11" fill="#5a6170" font-family="monospace" font-size="8">QR Scanner</text>
+  <rect x="60" y="34" width="80" height="80" rx="6" fill="#13161c" stroke="#222730"/>
+  <rect x="74" y="48" width="52" height="52" rx="3" fill="none" stroke="#5cf08c" stroke-opacity="0.5" stroke-width="2"/>
+  <text x="100" y="132" fill="#9ba1ad" font-family="monospace" font-size="8" text-anchor="middle">point camera at a QR code</text>
+</svg>
