@@ -11,6 +11,9 @@ html, body {
   color: #e6e8ec;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
   -webkit-font-smoothing: antialiased;
+  /* Readability pass: nudge the baseline up a touch and open line-height. */
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 * { box-sizing: border-box; }
@@ -54,7 +57,7 @@ a { color: inherit; text-decoration: none; }
 }
 
 .label {
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #5a6170;

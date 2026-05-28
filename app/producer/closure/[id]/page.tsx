@@ -155,6 +155,33 @@ export default async function ClosurePage({ params }: { params: Promise<{ id: st
           ))}
         </ul>
       </Panel>
+
+      <Panel title="Human Override" section="09" subtitle="closed ≠ final — a reviewer can reopen this case with notes">
+        <div className="flex items-start gap-4">
+          <span className="px-2 py-1 text-[11px] tracking-widest border border-accent-amber/40 rounded bg-accent-amber/10 text-accent-amber whitespace-nowrap">
+            ↺ REOPEN
+          </span>
+          <div className="flex-1">
+            <p className="text-xs text-ink-secondary mb-3">
+              If you believe the static funnel under-scored this app, reopen it and send it to dynamic
+              investigation with your notes. The override is recorded on the case.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                disabled
+                placeholder="reviewer notes (POC: wired to GateReopenOverride in production)…"
+                className="flex-1 min-w-[220px] bg-bg-base border border-edge/40 rounded px-2 py-1.5 text-xs text-ink-muted"
+              />
+              <span className="px-3 py-1.5 text-[11px] tracking-widest rounded border border-accent-amber/40 bg-accent-amber/10 text-accent-amber opacity-70">
+                REOPEN → STATIC
+              </span>
+              <span className="px-3 py-1.5 text-[11px] tracking-widest rounded border border-accent-violet/40 bg-accent-violet/10 text-accent-violet opacity-70">
+                REOPEN → DYNAMIC
+              </span>
+            </div>
+          </div>
+        </div>
+      </Panel>
     </div>
   );
 }

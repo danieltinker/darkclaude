@@ -1,8 +1,12 @@
 import Link from 'next/link';
 import { QUEUE_CASES } from '@/lib/mock-data';
 import { RISKWARE_GATE_POLICY } from '@/lib/rubrics';
+import { MALWARE_CATEGORY_LABEL } from '@/lib/types';
 import { Panel } from '@/components/chrome/Panel';
-import { GateBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/status/StatusBadge';
+import { VerdictBadge } from '@/components/status/StatusBadge';
+import { DynamicVerdictBadge, PhaseBadge, caseVerdict } from '@/components/status/Verdict';
+import { ScoreNumber } from '@/components/score/ScoreNumber';
+import { JourneyWizard } from '@/components/pipeline/JourneyWizard';
 
 export default function Home() {
   const closedEarly = QUEUE_CASES.filter(c => c.producer_status === 'STATIC_INSUFFICIENT_CLOSED').length;
@@ -31,44 +35,62 @@ export default function Home() {
       {/* HOW IT WORKS — the new plain-English story */}
       <HowItWorks />
 
-      {/* Active cases */}
+      {/* The status journey an app travels */}
+      <Panel title="Status Journey" section="·" subtitle="the full path an app takes — two gates, two early-closures, and the human-reopen loop">
+        <JourneyWizard />
+      </Panel>
+
+      {/* Active cases — proper table: App · Category · State · Static · Dynamic · Verdict */}
       <Panel title="Active Cases" section="·" subtitle="click any row to open the case file">
-        <div className="space-y-2">
-          {QUEUE_CASES.map(c => (
-            <Link
-              key={c.case_identity.app_review_id}
-              href={`/producer/case/${c.case_identity.app_review_id}`}
-              className="card block px-4 py-3 hover:border-accent-green/40 transition-colors"
-            >
-              <div className="grid grid-cols-12 gap-3 items-center">
-                <div className="col-span-3">
-                  <div className="text-sm font-semibold">{c.case_identity.app_name}</div>
-                  <div className="text-[11px] text-ink-muted font-mono">
-                    {c.case_identity.package_name} v{c.case_identity.version_code}
-                  </div>
-                </div>
-                <div className="col-span-1">
-                  <PriorityBadge priority={c.priority} />
-                </div>
-                <div className="col-span-2">
-                  <StatusBadge status={c.producer_status} side="producer" />
-                </div>
-                <div className="col-span-3">
-                  {c.gate_decision ? (
-                    <GateBadge status={c.gate_decision.status} />
-                  ) : (
-                    <span className="text-[10px] text-ink-muted tracking-widest">— gate pending —</span>
-                  )}
-                </div>
-                <div className="col-span-1 text-xs text-ink-muted text-right">
-                  score <span className="text-ink-primary tabular-nums">{c.final_score || c.static_score}</span>
-                </div>
-                <div className="col-span-2 text-right">
-                  {renderOutcomeBadge(c)}
-                </div>
-              </div>
-            </Link>
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[11px] tracking-widest text-ink-muted border-b border-edge text-left">
+                <th className="py-2 pr-3 font-normal">App</th>
+                <th className="px-3 font-normal">Category</th>
+                <th className="px-3 font-normal">State</th>
+                <th className="px-3 font-normal text-right">Static</th>
+                <th className="px-3 font-normal text-right">Dynamic</th>
+                <th className="pl-3 font-normal text-right">Verdict</th>
+              </tr>
+            </thead>
+            <tbody>
+              {QUEUE_CASES.map(c => {
+                const v = caseVerdict(c);
+                return (
+                  <tr key={c.case_identity.app_review_id} className="border-b border-edge/40 hover:bg-bg-card transition-colors">
+                    <td className="py-3 pr-3">
+                      <Link href={`/producer/case/${c.case_identity.app_review_id}`} className="block">
+                        <div className="font-semibold">{c.case_identity.app_name}</div>
+                        <div className="text-[11px] text-ink-muted font-mono">
+                          {c.case_identity.package_name} v{c.case_identity.version_code}
+                        </div>
+                      </Link>
+                    </td>
+                    <td className="px-3">
+                      <span className="px-2 py-0.5 text-[11px] tracking-widest border border-edge rounded bg-bg-card text-ink-secondary">
+                        {MALWARE_CATEGORY_LABEL[c.case_identity.category_id]}
+                      </span>
+                    </td>
+                    <td className="px-3"><PhaseBadge c={c} /></td>
+                    <td className="px-3 text-right">
+                      {c.static_score > 0
+                        ? <ScoreNumber value={c.static_score} threshold={8} mode="higher_is_worse" size="sm" showThreshold={false} />
+                        : <span className="text-ink-muted text-[11px]">—</span>}
+                    </td>
+                    <td className="px-3 text-right">
+                      {c.dynamic_score > 0
+                        ? <ScoreNumber value={c.dynamic_score} threshold={16} mode="higher_is_worse" size="sm" showThreshold={false} />
+                        : <span className="text-ink-muted text-[11px]">—</span>}
+                    </td>
+                    <td className="pl-3 text-right">
+                      <DynamicVerdictBadge verdict={v} overridden={!!c.verdict_override} />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </Panel>
 
@@ -148,23 +170,6 @@ export default function Home() {
       </div>
     </div>
   );
-}
-
-function renderOutcomeBadge(c: typeof QUEUE_CASES[number]) {
-  if (c.report) return <VerdictBadge verdict={c.report.verdict_candidate} />;
-  if (c.producer_status === 'METADATA_INSUFFICIENT_CLOSED') {
-    return <span className="px-2 py-0.5 text-[10px] tracking-widest border border-ink-muted/40 rounded bg-bg-card text-ink-secondary">METADATA CLOSED</span>;
-  }
-  if (c.producer_status === 'STATIC_INSUFFICIENT_CLOSED') {
-    return <span className="px-2 py-0.5 text-[10px] tracking-widest border border-ink-muted/40 rounded bg-bg-card text-ink-secondary">STATIC CLOSED</span>;
-  }
-  if (c.producer_status === 'FALSE_POSITIVE_CLOSED') {
-    return <span className="px-2 py-0.5 text-[10px] tracking-widest border border-accent-blue/40 rounded bg-accent-blue/10 text-accent-blue">FALSE POSITIVE</span>;
-  }
-  if (c.producer_status === 'EXPLORATORY_FINDING_READY') {
-    return <span className="px-2 py-0.5 text-[10px] tracking-widest border border-accent-violet/40 rounded bg-accent-violet/10 text-accent-violet">EXPLORATORY</span>;
-  }
-  return <span className="text-[10px] text-ink-muted">pending</span>;
 }
 
 function Hero() {

@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getCaseByReviewId, getCaseKey, getCaseLogs } from '@/lib/mock-data';
+import { getCaseByReviewId, getCaseKey, getCaseLogs, getPackageHistory } from '@/lib/mock-data';
+import { MALWARE_CATEGORY_LABEL, DYNAMIC_VERDICT_LABEL } from '@/lib/types';
 import { LogViewer } from '@/components/evidence/LogViewer';
 import { Panel, KV } from '@/components/chrome/Panel';
 import { GateBadge, IocLevelBadge, PriorityBadge, StatusBadge, VerdictBadge } from '@/components/status/StatusBadge';
@@ -176,7 +177,56 @@ export default async function CaseDetail({ params }: { params: Promise<{ id: str
               <KV k="Expires at" v={new Date(c.queue_lock.lock_expires_at).toLocaleString()} />
               <KV k="Status" v={c.queue_lock.status} />
             </div>
+            {c.device_sync && (
+              <div className="mt-3 pt-3 border-t border-edge/40">
+                <div className="label mb-2">device sync</div>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${c.device_sync.connected ? 'bg-accent-green' : 'bg-ink-muted'}`} />
+                  <span className={`text-xs ${c.device_sync.connected ? 'text-accent-green' : 'text-ink-muted'}`}>
+                    {c.device_sync.connected ? 'CONNECTED' : 'DISCONNECTED'}
+                  </span>
+                  <span className="text-[10px] text-ink-muted font-mono">{c.device_sync.device_id}</span>
+                </div>
+                <div className="text-[10px] text-ink-muted">{c.device_sync.cached_artifacts} cached artifacts · {c.device_sync.note}</div>
+              </div>
+            )}
           </Panel>
+
+          {(() => {
+            const hist = getPackageHistory(c.case_identity.package_name);
+            if (!hist || hist.versions.length <= 1) return null;
+            return (
+              <Panel title="Package History" section="·" subtitle={`${hist.versions.length} versions of ${hist.package_name} — learn from siblings`}>
+                <div className="space-y-2">
+                  {hist.versions.map(v => {
+                    const here = v.version_code === c.case_identity.version_code;
+                    return (
+                      <div key={v.version_code} className={`card p-2 ${here ? 'border-accent-green/40' : ''}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-semibold">
+                            v{v.version_code}
+                            <span className="text-ink-muted font-normal"> · {v.version_name}</span>
+                            {here && <span className="text-accent-green text-[9px] ml-2">THIS</span>}
+                          </div>
+                          <span className={`px-1.5 py-0.5 text-[9px] tracking-widest border rounded ${
+                            v.verdict === 'strong_tp' ? 'text-accent-red border-accent-red/40 bg-accent-red/10'
+                            : v.verdict === 'tp' ? 'text-accent-amber border-accent-amber/40 bg-accent-amber/10'
+                            : v.verdict === 'strong_fp' ? 'text-accent-green border-accent-green/40 bg-accent-green/10'
+                            : 'text-accent-blue border-accent-blue/40 bg-accent-blue/10'
+                          }`}>
+                            {v.verdict === 'pending' ? 'PENDING' : DYNAMIC_VERDICT_LABEL[v.verdict].toUpperCase().replace('TRUE POSITIVE','TP').replace('FALSE POSITIVE','FP').replace(' (LEAN FP)','')}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-ink-muted mt-1">
+                          score {v.final_score} · {v.reviewed_at}{v.notable_iocs.length ? ` · ${v.notable_iocs.length} IOCs` : ''}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Panel>
+            );
+          })()}
 
           <Panel title="Install Verification" section="03" subtitle="short-circuits the funnel on failure">
             {c.install_verification ? (
